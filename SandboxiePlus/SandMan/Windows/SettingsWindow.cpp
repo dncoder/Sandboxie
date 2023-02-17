@@ -1091,6 +1091,7 @@ void CSettingsWindow::SaveSettings()
 
 bool CSettingsWindow::ApplyCertificate(const QByteArray &Certificate, QWidget* widget)
 {
+	return true;
 	QString CertPath = theAPI->GetSbiePath() + "\\Certificate.dat";
 	if (!Certificate.isEmpty()) {
 
