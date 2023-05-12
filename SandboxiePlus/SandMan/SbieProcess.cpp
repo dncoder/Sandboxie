@@ -91,15 +91,6 @@ QString CSbieProcess::ImageTypeToStr(quint32 type)
 	}
 }
 
-
-QString	CSbieProcess::GetProcessName() const
-{
-	QString Name = CBoxedProcess::GetProcessName();
-	if (m_bIsWoW64)
-		Name += " *32";
-	return Name;
-}
-
 QString CSbieProcess::GetStatusStr() const
 {
 	QString Status;
@@ -119,7 +110,7 @@ QString CSbieProcess::GetStatusStr() const
 	if (m_ProcessInfo.IsSystem)
 		Status += tr(" as System");
 
-	if(m_SessionId != theAPI->GetSessionID())
+	if(m_SessionId != theAPI->GetSessionID() && m_SessionId != -1)
 		Status += tr(" in session %1").arg(m_SessionId);
 
 	quint32 ImageType = GetImageType();
@@ -138,11 +129,9 @@ void CSbieProcess::InitProcessInfoImpl(void* ProcessHandle)
 {
 	CBoxedProcess::InitProcessInfoImpl(ProcessHandle);
 
-	HANDLE TokenHandle = NULL;
-	if(m_pBox->GetBool("NoSecurityIsolation") || m_pBox->GetBool("OriginalToken"))
+	HANDLE TokenHandle = (HANDLE)m_pBox->Api()->QueryProcessInfo(m_ProcessId, 'ptok');
+	if (!TokenHandle)
 		NtOpenProcessToken(ProcessHandle, TOKEN_QUERY, &TokenHandle);
-	else
-		TokenHandle = (HANDLE)m_pBox->Api()->QueryProcessInfo(m_ProcessId, 'ptok');
 	if (TokenHandle)
 	{
 		ULONG returnLength;
@@ -154,8 +143,19 @@ void CSbieProcess::InitProcessInfoImpl(void* ProcessHandle)
 
 		BYTE tokenUserBuff[0x80] = { 0 };
 		if (NT_SUCCESS(NtQueryInformationToken(TokenHandle, TokenUser, tokenUserBuff, sizeof(tokenUserBuff), &returnLength))){
-			m_ProcessInfo.IsSystem = RtlEqualSid(((PTOKEN_USER)tokenUserBuff)->User.Sid, &SeLocalSystemSid);
+			m_ProcessInfo.IsSystem = EqualSid(((PTOKEN_USER)tokenUserBuff)->User.Sid, &SeLocalSystemSid);
 		}
+
+		ULONG restricted;
+		if (NT_SUCCESS(NtQueryInformationToken(TokenHandle, (TOKEN_INFORMATION_CLASS)TokenIsRestricted, &restricted, sizeof(ULONG), &returnLength))) {
+			m_ProcessInfo.IsRestricted = !!restricted;
+		}
+		
+        BYTE appContainerBuffer[0x80];
+        if (NT_SUCCESS(NtQueryInformationToken(TokenHandle, (TOKEN_INFORMATION_CLASS)TokenAppContainerSid, appContainerBuffer, sizeof(appContainerBuffer), &returnLength))) {
+            PTOKEN_APPCONTAINER_INFORMATION appContainerInfo = (PTOKEN_APPCONTAINER_INFORMATION)appContainerBuffer;
+			m_ProcessInfo.IsAppContainer = appContainerInfo->TokenAppContainer != NULL;
+        }
 
 		CloseHandle(TokenHandle);
 	}

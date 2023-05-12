@@ -14,6 +14,7 @@ void COptionsWindow::CreateAdvanced()
 	connect(ui.chkElevateCreateProcessFix, SIGNAL(clicked(bool)), this, SLOT(OnAdvancedChanged()));
 	connect(ui.chkNoWindowRename, SIGNAL(clicked(bool)), this, SLOT(OnNoWindowRename()));
 	connect(ui.chkNestedJobs, SIGNAL(clicked(bool)), this, SLOT(OnAdvancedChanged()));
+	connect(ui.chkUseSbieDeskHack, SIGNAL(clicked(bool)), this, SLOT(OnAdvancedChanged()));
 	connect(ui.chkUseSbieWndStation, SIGNAL(clicked(bool)), this, SLOT(OnAdvancedChanged()));
 
 	connect(ui.chkAddToJob, SIGNAL(clicked(bool)), this, SLOT(OnAdvancedChanged()));
@@ -44,8 +45,8 @@ void COptionsWindow::CreateAdvanced()
 	m_AdvOptions.insert("ExternalManifestHack",			SAdvOption{eSpec, QStringList() << "y" << "n", tr("Enable special inconsistent PreferExternalManifest behaviour, as needed for some Edge fixes")});
 	m_AdvOptions.insert("RpcMgmtSetComTimeout",			SAdvOption{eSpec, QStringList() << "n" << "y", tr("Set RpcMgmtSetComTimeout usage for specific processes")});
 	m_AdvOptions.insert("CopyBlockDenyWrite",			SAdvOption{eSpec, QStringList() << "y" << "n", tr("Makes a write open call to a file that won't be copied fail instead of turning it read-only.")});
-	m_AdvOptions.insert("UseSbieDeskHack",				SAdvOption{eSpec, QStringList() << "y" << "n", tr("")});
-	m_AdvOptions.insert("UseSbieWndStation",			SAdvOption{eSpec, QStringList() << "n" << "y", tr("")});
+	m_AdvOptions.insert("UseSbieDeskHack",				SAdvOption{eOnlySpec, QStringList() << "n" << "y", tr("")});
+	m_AdvOptions.insert("UseSbieWndStation",			SAdvOption{eOnlySpec, QStringList() << "n" << "y", tr("")});
 	m_AdvOptions.insert("FakeAdminRights",				SAdvOption{eOnlySpec, QStringList() << "y" << "n", tr("Make specified processes think they have admin permissions.")});
 	m_AdvOptions.insert("WaitForDebugger",				SAdvOption{eOnlySpec, QStringList() << "y" << "n", tr("Force specified processes to wait for a debugger to attach.")});
 	m_AdvOptions.insert("BoxNameTitle",					SAdvOption{eOnlySpec, QStringList() << "y" << "n" << "-", tr("")});
@@ -96,7 +97,9 @@ void COptionsWindow::CreateAdvanced()
 	connect(ui.btnAddHostProcess, SIGNAL(clicked(bool)), this, SLOT(OnAddHostProcess()));
 	connect(ui.btnDelHostProcess, SIGNAL(clicked(bool)), this, SLOT(OnDelHostProcess()));
 	connect(ui.chkShowHostProcTmpl, SIGNAL(clicked(bool)), this, SLOT(OnShowHostProcTmpl()));
-	connect(ui.chkConfidential, SIGNAL(clicked(bool)), this, SLOT(OnAdvancedChanged())); // todo norify premium feaure
+	connect(ui.chkConfidential, SIGNAL(clicked(bool)), this, SLOT(OnAdvancedChanged())); // todo notify premium feature
+	connect(ui.chkHostProtect, SIGNAL(clicked(bool)), this, SLOT(OnHostProtectChanged()));
+	connect(ui.chkHostProtectMsg, SIGNAL(clicked(bool)), this, SLOT(OnAdvancedChanged()));
 
 	connect(ui.btnAddUser, SIGNAL(clicked(bool)), this, SLOT(OnAddUser()));
 	connect(ui.btnDelUser, SIGNAL(clicked(bool)), this, SLOT(OnDelUser()));
@@ -110,6 +113,7 @@ void COptionsWindow::LoadAdvanced()
 	ui.chkElevateCreateProcessFix->setChecked(m_pBox->GetBool("ApplyElevateCreateProcessFix", false));
 
 	ui.chkNestedJobs->setChecked(m_pBox->GetBool("AllowBoxedJobs", false));
+	ui.chkUseSbieDeskHack->setChecked(m_pBox->GetBool("UseSbieDeskHack", true));
 	ui.chkUseSbieWndStation->setChecked(m_pBox->GetBool("UseSbieWndStation", true));
 
 	ui.chkAddToJob->setChecked(!m_pBox->GetBool("NoAddProcessToJob", false));
@@ -129,6 +133,10 @@ void COptionsWindow::LoadAdvanced()
 	//ui.chkOpenLsaSSPI->setChecked(!m_pBox->GetBool("BlockPassword", true)); // OpenLsaSSPI
 	ui.chkOpenSamEndpoint->setChecked(m_pBox->GetBool("OpenSamEndpoint", false));
 	ui.chkOpenLsaEndpoint->setChecked(m_pBox->GetBool("OpenLsaEndpoint", false));
+
+	ui.chkHostProtect->setChecked(m_pBox->GetBool("ProtectHostImages", false));
+	ui.chkHostProtectMsg->setEnabled(ui.chkHostProtect->isChecked());
+	ui.chkHostProtectMsg->setChecked(m_pBox->GetBool("NotifyImageLoadDenied", true));
 
 	ReadGlobalCheck(ui.chkSbieLogon, "SandboxieLogon", false);
 
@@ -247,6 +255,7 @@ void COptionsWindow::SaveAdvanced()
 	WriteAdvancedCheck(ui.chkPreferExternalManifest, "PreferExternalManifest", "y", "");
 	WriteAdvancedCheck(ui.chkElevateCreateProcessFix, "ApplyElevateCreateProcessFix", "y", "");
 
+	WriteAdvancedCheck(ui.chkUseSbieDeskHack, "UseSbieDeskHack", "", "n");
 	WriteAdvancedCheck(ui.chkUseSbieWndStation, "UseSbieWndStation", "", "n");
 
 	WriteAdvancedCheck(ui.chkAddToJob, "NoAddProcessToJob", "", "y");
@@ -267,6 +276,8 @@ void COptionsWindow::SaveAdvanced()
 	WriteAdvancedCheck(ui.chkOpenSamEndpoint, "OpenSamEndpoint", "y", "");
 	WriteAdvancedCheck(ui.chkOpenLsaEndpoint, "OpenLsaEndpoint", "y", "");
 
+	WriteAdvancedCheck(ui.chkHostProtect, "ProtectHostImages", "y", "");
+	WriteAdvancedCheck(ui.chkHostProtectMsg, "NotifyImageLoadDenied", "", "n");
 	WriteGlobalCheck(ui.chkSbieLogon, "SandboxieLogon", false);
 
 	SaveOptionList();
@@ -435,6 +446,12 @@ void COptionsWindow::OnNoWindowRename()
 		SetAccessEntry(eWnd, "", eOpen, "#");
 	else
 		DelAccessEntry(eWnd, "", eOpen, "#");
+}
+
+void COptionsWindow::OnHostProtectChanged()
+{
+	ui.chkHostProtectMsg->setEnabled(ui.chkHostProtect->isChecked());
+	OnAdvancedChanged();
 }
 
 // options
@@ -976,6 +993,9 @@ void COptionsWindow::OnDelUser()
 {
 	foreach(QListWidgetItem* pItem, ui.lstUsers->selectedItems())
 		delete pItem;
+
+	m_AdvancedChanged = true;
+	OnOptChanged();
 }
 
 void COptionsWindow::CreateDebug()

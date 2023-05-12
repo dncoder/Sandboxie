@@ -32,6 +32,7 @@ LicenseFile=.\license.txt
 UsedUserAreasWarning=no
 VersionInfoCopyright=Copyright (C) 2020-2022 by David Xanatos (xanasoft.com)
 VersionInfoVersion={#MyAppVersion}
+SetupIconFile=SandManInstall.ico
 
 ; Handled in code section as always want DirPage for portable mode.
 DisableDirPage=no
@@ -53,6 +54,7 @@ Name: "RefreshBuild"; Description: "{cm:RefreshBuild}"; MinVersion: 0.0,5.0; Che
 Source: ".\Release\{#MyAppSrc}\*"; DestDir: "{app}"; MinVersion: 0.0,5.0; Flags: recursesubdirs ignoreversion; Excludes: "*.pdb"
 ; include the driver pdb
 Source: ".\Release\{#MyAppSrc}\SbieDrv.pdb"; DestDir: "{app}"; MinVersion: 0.0,5.0; Flags: ignoreversion
+Source: ".\Release\{#MyAppSrc}\SbieDll.pdb"; DestDir: "{app}"; MinVersion: 0.0,5.0; Flags: ignoreversion
 
 ; Only if portable.
 Source: ".\Sandboxie.ini"; DestDir: "{app}"; Flags: ignoreversion onlyifdoesntexist; Check: IsPortable
@@ -72,7 +74,7 @@ Name: "{userdesktop}\Sandboxie-Plus"; Filename: "{app}\SandMan.exe"; Tasks: Desk
 
 [INI]
 ; Set Sandman language.
-Filename: "{localappdata}\{#MyAppName}\{#MyAppName}.ini"; Section: "Options"; Key: "UiLanguage"; String: "{code:SandmanLanguage|{language}}"; Check: not IsPortable
+Filename: "{localappdata}\{#MyAppName}\{#MyAppName}.ini"; Section: "Options"; Key: "UiLanguage"; String: "{code:SandmanLanguage|{language}}"; Check: (not IsPortable) and (not IsUpgrade)
 Filename: "{app}\{#MyAppName}.ini"; Section: "Options"; Key: "UiLanguage"; String: "{code:SandmanLanguage|{language}}"; Check: IsPortable
 
 
@@ -121,7 +123,7 @@ Filename: "{app}\UpdUtil.exe"; Parameters: {code:GetParams}; StatusMsg: "UpdUtil
 Filename: "{app}\KmdUtil.exe"; Parameters: "start SbieSvc"; StatusMsg: "KmdUtil start SbieSvc"; Check: not IsPortable
 
 ; Start the Sandman UI.
-Filename: "{app}\Start.exe"; Parameters: "open_agent:sandman.exe"; StatusMsg: "Launch SandMan UI..."; Flags: postinstall nowait; Check: IsOpenSandMan
+Filename: "{app}\Start.exe"; Parameters: "open_agent:sandman.exe"; Description: "Start Sandboxie-Plus UI"; StatusMsg: "Launch SandMan UI..."; Flags: postinstall nowait; Check: IsOpenSandMan
 ;Filename: "{app}\SandMan.exe"; Parameters: "-autorun"; StatusMsg: "Launch SandMan UI..."; Flags: runasoriginaluser nowait; Check: not IsPortable
 
 
@@ -221,6 +223,7 @@ begin
     'dutch': Result := 'nl';
     'french': Result := 'fr';
     'german': Result := 'de';
+    'hungarian': Result := 'hu';
     'italian': Result := 'it';
     'korean': Result := 'ko';
     'polish': Result := 'pl';
@@ -354,7 +357,7 @@ begin
   // Shutdown service, driver and processes as ready to install.
   if ((CurPageID = wpReady) and (not IsPortable())) then
   begin
-    
+
     // Stop processes.
     Exec(ExpandConstant('{sys}\taskkill.exe'), '/IM Sandman.exe /IM SbieCtrl.exe /IM Start.exe /F', '', SW_HIDE, ewWaitUntilTerminated, ExecRet);
 
@@ -464,7 +467,7 @@ end;
 //begin
 //
 //  // after the installation
-//  if (CurStep <> ssPostInstall) then  
+//  if (CurStep <> ssPostInstall) then
 //    exit;
 //
 //  if WizardIsTaskSelected('RefreshBuild') then

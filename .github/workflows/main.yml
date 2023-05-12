@@ -21,7 +21,7 @@ jobs:
     #        qt-target: win64_msvc2019_64
 
     runs-on: windows-2019
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - name: Checkout code
@@ -131,17 +131,17 @@ jobs:
         run: SandboxiePlus\qmake_plus.cmd Win32
 
     #
-    # Compile Sandboxie Live Updater
+    # Compile Sandboxie Tools
     #
 
-      - name: Build Sandboxie-Live x86
-        run: msbuild /t:build SandboxieLive\SandboxieLive.sln /p:Configuration="Release" /p:Platform=x86 -maxcpucount:8
+      - name: Build Sandboxie-Tools x86
+        run: msbuild /t:build SandboxieTools\SandboxieTools.sln /p:Configuration="Release" /p:Platform=x86 -maxcpucount:8
 
-      - name: Build Sandboxie-Live x64
-        run: msbuild /t:build SandboxieLive\SandboxieLive.sln /p:Configuration="Release" /p:Platform=x64 -maxcpucount:8
+      - name: Build Sandboxie-Tools x64
+        run: msbuild /t:build SandboxieTools\SandboxieTools.sln /p:Configuration="Release" /p:Platform=x64 -maxcpucount:8
 
-      - name: Build Sandboxie-Live ARM64
-        run: msbuild /t:build SandboxieLive\SandboxieLive.sln /p:Configuration="Release" /p:Platform=ARM64 -maxcpucount:8
+      - name: Build Sandboxie-Tools ARM64
+        run: msbuild /t:build SandboxieTools\SandboxieTools.sln /p:Configuration="Release" /p:Platform=ARM64 -maxcpucount:8
         
 
     #
@@ -156,6 +156,17 @@ jobs:
 
       - name: Merging Builds
         run: Installer\merge_builds.cmd
+
+      - name: Collect installer assets
+        run: Installer\get_assets.cmd
+
+      - name: Upload installer assets
+        uses: actions/upload-artifact@v3
+        with:
+          name: Assets
+          path: |
+            Installer/Assets/*
+          retention-days: 60
 
       - name: Upload Sandboxie x64
         uses: actions/upload-artifact@v3

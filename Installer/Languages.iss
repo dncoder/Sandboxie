@@ -13,6 +13,7 @@ Name: "ChineseTraditional"; MessagesFile: "isl\ChineseTraditional.isl"
 Name: "dutch"; MessagesFile: "compiler:Languages\Dutch.isl"
 Name: "french"; MessagesFile: "compiler:Languages\French.isl"
 Name: "german"; MessagesFile: "compiler:Languages\German.isl"
+Name: "hungarian"; MessagesFile: "compiler:Languages\Hungarian.isl"
 Name: "Italian"; MessagesFile: "compiler:Languages\Italian.isl"
 Name: "Korean"; MessagesFile: "isl\Korean.isl"
 Name: "polish"; MessagesFile: "compiler:Languages\Polish.isl"
@@ -181,6 +182,29 @@ german.UninstallTaskLabel5=Entferne die Konfiguration und alle &Sandboxen%nWähl
 german.AutoStartProgram=Starte automatisch %1
 german.RefreshBuild=Neueste Templates.ini und Übersetzungen herunterladen
 
+; Hungarian
+hungarian.AddSandboxedMenu=Az "Izolált módú futtatás" hozzáadása a helyi menühöz
+hungarian.AddSandboxedBrowser=Asztali parancsikon hozzáadása a böngésző izolált módú indításához
+hungarian.SandboxieStartMenu1=Bármilyen program futtatása izolált módban
+hungarian.SandboxieStartMenu2=Webböngésző futtatása izolált módban
+hungarian.SandboxieStartMenu3=Sandboxie start menü
+hungarian.SandboxedBrowser=Izolált böngésző
+hungarian.CustomPageLabel1=Válassza ki a telepítés típusát
+hungarian.CustomPageLabel2=Hogyan kell telepíteni?
+hungarian.CustomPageLabel3=Válassza ki a telepítési módot
+hungarian.CustomPageInstallMode=Telepítse a {#MyAppName} alkalmazást erre a számítógépre
+hungarian.CustomPageUpgradeMode=Frissítse a meglévő {#MyAppName} telepítést
+hungarian.CustomPagePortableMode=Csomagolja ki az összes fájlt egy könyvtárba hordozható használatra
+hungarian.RequiresWin7OrLater=Sandboxie-Plus alkalmazáshoz Windows 7 vagy újabb rendszer szükséges.
+hungarian.ClassicFound=A Sandboxie Classic telepítése észlelve, melyet először el kell távolítani. Eltávolítja most?
+hungarian.RunSandboxedMenu=Futtatás izolált módban
+hungarian.UninstallTaskLabel1=Válassza ki az eltávolítás típusát
+hungarian.UninstallTaskLabel2=Hogyan távolítja el a Sandboxie-Plus-t?
+hungarian.UninstallTaskLabel3=A konfigurációs fájlok és homokozók megtartása%nEz a leginkább ajánlott lehetőség, ha a Sandboxie-Plus újratelepítését tervezi, miközben megtartja konfigurációs fájljait és homokozóit.
+hungarian.UninstallTaskLabel4=A konfigurációs fájlok eltávolítása%nVálassza ezt a lehetőséget a Sandboxie.ini és a Sandboxie-Plus.ini konfigurációs fájlok eltávolításához, miközben a homokozók változatlanok maradnak.
+hungarian.UninstallTaskLabel5=A konfigurációs fájlok és homokozók eltávolítása%nVálassza ezt a lehetőséget az összes konfigurációs fájl és homokozó eltávolításához, beleértve a Sandbox mappát is, amely a FileRootPath egyéni elérési útjain található.
+hungarian.RefreshBuild=Töltse le a legújabb Templates.ini-t és a fordításokat
+
 ; Italian
 Italian.AddSandboxedMenu=Aggiungi l'opzione "Avvia nell'area virtuale" al menu contestuale
 Italian.AddSandboxedBrowser=Aggiungi un collegamento sul desktop per l'avvio del browser Web in Sandboxie
@@ -202,6 +226,7 @@ Italian.UninstallTaskLabel2=Come vorresti disinstallare Sandboxie-Plus?
 Italian.UninstallTaskLabel3=&Mantieni i file di configurazione e le aree virtuali%nSelezionare questa opzione se si prevede di reinstallare Sandboxie in un secondo momento, conservando le impostazioni e le aree virtuali.
 Italian.UninstallTaskLabel4=Rimuovi i file di &configurazione%nSelezionare questa opzione per rimuovere i file di configurazione Sandboxie.ini e Sandboxie-Plus.ini, lasciando invariate le aree virtuali presenti.
 Italian.UninstallTaskLabel5=Rimuovi i file di configurazione e le &aree virtuali%nSelezionare questa opzione per rimuovere tutti i file di configurazione e le aree virtuali, inclusa la cartella Sandbox nei percorsi personalizzati mediante FileRootPath.
+Italian.RefreshBuild=Aggiorna Templates.ini e translations.7z
 
 ; Korean
 Korean.AddSandboxedMenu=상황에 맞는 메뉴에 "샌드박스에서 실행" 추가

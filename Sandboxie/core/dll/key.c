@@ -1627,8 +1627,9 @@ _FX NTSTATUS Key_NtCreateKeyImpl(
 
         BOOLEAN KeyDeleted = FALSE;
 
-        if (!Key_Delete_v2)
-        if (Key_CheckDeletedKey(*KeyHandle)) {
+        if (Key_Delete_v2)
+            KeyDeleted = CopyPathCreated; // Key_IsDeleted_v2(TruePath) ? TRUE : FALSE;
+        else if (Key_CheckDeletedKey(*KeyHandle)) {
 
             KeyDeleted = TRUE;
 
@@ -2538,8 +2539,6 @@ _FX NTSTATUS Key_MarkDeletedAndClose(HANDLE KeyHandle)
 
     if (Key_Delete_v2) {
 
-        THREAD_DATA *TlsData = Dll_GetTlsData(NULL);
-
         UNICODE_STRING objname;
         WCHAR *TruePath;
         WCHAR *CopyPath;
@@ -2562,9 +2561,9 @@ _FX NTSTATUS Key_MarkDeletedAndClose(HANDLE KeyHandle)
             Key_DiscardMergeByPath(TruePath, TRUE);
         }
 
-        Dll_PopTlsNameBuffer(TlsData);
-
         __sys_NtDeleteKey(KeyHandle);
+
+        Dll_PopTlsNameBuffer(TlsData);
 
     }
     else {
@@ -3568,6 +3567,7 @@ _FX NTSTATUS Key_NtQueryValueKey(
                 __leave;
         }
 
+        // $Workaround$ - 3rd party fix
         if (Dll_ImageType == DLL_IMAGE_ACROBAT_READER ||
             Dll_ImageType == DLL_IMAGE_PLUGIN_CONTAINER ||
             Dll_ImageType == DLL_IMAGE_GOOGLE_CHROME ||
@@ -3796,7 +3796,7 @@ _FX NTSTATUS Key_NtQueryValueKeyFakeForInternetExplorer(
 // Key_NtQueryValueKeyFakeForAcrobatReader
 //---------------------------------------------------------------------------
 
-
+// $Workaround$ - 3rd party fix
 _FX NTSTATUS Key_NtQueryValueKeyFakeForAcrobatReader(
     const WCHAR *TruePath,
     const WCHAR *ValueNameBuf,

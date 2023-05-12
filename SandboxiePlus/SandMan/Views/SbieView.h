@@ -79,7 +79,8 @@ protected:
 
 	QMap<QString, QStringList>	m_Groups;
 	QSet<QString>				m_Collapsed;
-	//bool						m_UserConfigChanged;
+	bool						m_UserConfigChanged;
+	bool						m_HoldExpand;
 
 private:
 
@@ -136,9 +137,7 @@ private:
 	QAction*				m_pMenuAutoRun;
 	QAction*				m_pMenuRunCmd;
 	QAction*				m_pMenuRunCmdAdmin;
-#ifdef _WIN64
 	QAction*				m_pMenuRunCmd32;
-#endif
 	QAction*				m_pMenuMkLink;
 	QMenu*					m_pMenuPresets;
 	QActionGroup*			m_pMenuPresetsAdmin;
@@ -148,6 +147,7 @@ private:
 	QAction*				m_pMenuPresetsINet;
 	QAction*				m_pMenuPresetsShares;
 	QAction*				m_pMenuPresetsRecovery;
+	QAction*				m_pMenuPresetsForce;
 	QAction*				m_pMenuOptions;
 	QAction*				m_pMenuSnapshots;
 	QAction*				m_pMenuEmptyBox;

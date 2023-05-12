@@ -418,9 +418,7 @@ _FX BOOLEAN Secure_Init(void)
     SBIEDLL_HOOK(Ldr_, NtQueryInformationToken);
     
     if (Dll_OsBuild >= 9600) { // Windows 8.1 and later
-        if (DLL_IMAGE_GOOGLE_CHROME == Dll_ImageType) {
-            SBIEDLL_HOOK(Ldr_, NtOpenThreadToken);
-        }
+        SBIEDLL_HOOK(Ldr_, NtOpenThreadToken);
     }
 
     //
@@ -1187,7 +1185,7 @@ BOOL Ldr_NtOpenThreadToken(HANDLE ThreadHandle, DWORD DesiredAccess, BOOL OpenAs
     BOOL rc;
 
     rc = __sys_NtOpenThreadToken(ThreadHandle, DesiredAccess, OpenAsSelf, TokenHandle);
-    if (rc == STATUS_ACCESS_DENIED && OpenAsSelf) {
+    if (DLL_IMAGE_GOOGLE_CHROME == Dll_ImageType && rc == STATUS_ACCESS_DENIED && OpenAsSelf) {
         rc = __sys_NtOpenThreadToken(ThreadHandle, DesiredAccess, 0, TokenHandle);
     }
     return rc;
@@ -1262,8 +1260,8 @@ _FX NTSTATUS Secure_NtDuplicateToken(
     _Out_ PHANDLE NewTokenHandle)
 {
     //
-    // on windows 11 MSIServer fails to duplicte its impersonation token when using it
-    // so we drop the impersonation, do the duplication and re impersonate
+    // on Windows 11, MSIServer fails to duplicate its impersonation token when using it
+    // so we drop the impersonation, do the duplication and re-impersonate
     //
 
     HANDLE hToken = NULL;
@@ -1424,7 +1422,7 @@ _FX NTSTATUS Secure_RtlQueryElevationFlags(ULONG *Flags)
 
 
 //---------------------------------------------------------------------------
-// Secure_IsRestrictedToken
+// Secure_RtlCheckTokenMembershipEx
 //---------------------------------------------------------------------------
 
 NTSTATUS Secure_RtlCheckTokenMembershipEx(
@@ -1516,6 +1514,39 @@ _FX BOOLEAN Secure_IsRestrictedToken(BOOLEAN CheckThreadToken)
     }
 
     return return_value;
+}
+
+
+//---------------------------------------------------------------------------
+// Secure_IsRestrictedToken
+//---------------------------------------------------------------------------
+
+
+_FX BOOLEAN Secure_IsAppContainerToken(HANDLE hToken)
+{
+    BOOLEAN ret = FALSE;
+    BOOL bClose = FALSE;
+
+    if (Dll_OsBuild >= 9600) { // Windows 8.1 and later
+
+        if (hToken == NULL) {
+            if (!NT_SUCCESS(NtOpenProcessToken(NtCurrentProcess(), TOKEN_QUERY, &hToken)))
+                return ret;
+            bClose = TRUE;
+        }
+
+        ULONG returnLength = 0;
+        BYTE appContainerBuffer[0x80];
+        if (NT_SUCCESS(NtQueryInformationToken(hToken, (TOKEN_INFORMATION_CLASS)TokenAppContainerSid, appContainerBuffer, sizeof(appContainerBuffer), &returnLength))) {
+            PTOKEN_APPCONTAINER_INFORMATION appContainerInfo = (PTOKEN_APPCONTAINER_INFORMATION)appContainerBuffer;
+            ret = appContainerInfo->TokenAppContainer != NULL;
+        }
+
+        if (bClose)
+            NtClose(hToken);
+    }
+
+    return ret;
 }
 
 
@@ -1617,7 +1648,7 @@ _FX BOOLEAN Secure_IsLocalSystemToken(BOOLEAN CheckThreadToken)
 
 _FX BOOLEAN Secure_IsSameBox(HANDLE idProcess)
 {
-    WCHAR boxname[48];
+    WCHAR boxname[BOXNAME_COUNT];
     ULONG session_id;
     NTSTATUS status =
         SbieApi_QueryProcess(idProcess, boxname, NULL, NULL, &session_id);

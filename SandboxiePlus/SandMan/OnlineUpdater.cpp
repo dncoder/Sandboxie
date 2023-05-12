@@ -9,7 +9,7 @@
 #include <QJsonObject>
 #include "../MiscHelpers/Common/CheckableMessageBox.h"
 #include <QMessageBox>
-#include "../../SandboxieLive/UpdUtil/UpdUtil.h"
+#include "../../SandboxieTools/UpdUtil/UpdUtil.h"
 #include <QCryptographicHash>
 #include "Helpers/WinAdmin.h"
 #include <windows.h>
@@ -27,7 +27,7 @@
 #undef VERSION_UPD
 #define VERSION_UPD 	0
 
-#define DUMMY_PATH "C:\\Projects\\Sandboxie\\SandboxieLive\\x64\\Debug\\Test"
+#define DUMMY_PATH "C:\\Projects\\Sandboxie\\SandboxieTools\\x64\\Debug\\Test"
 #endif
 
 DWORD GetIdleTime() // in seconds
@@ -162,7 +162,7 @@ void COnlineUpdater::GetUpdates(QObject* receiver, const char* member, const QVa
 	//Query.addQueryItem("version", QString::number(VERSION_MJR) + "." + QString::number(VERSION_MIN) + "." + QString::number(VERSION_REV) + "." + QString::number(VERSION_UPD));
 	Query.addQueryItem("version", QString::number(VERSION_MJR) + "." + QString::number(VERSION_MIN) + "." + QString::number(VERSION_REV));
 	Query.addQueryItem("system", "windows-" + QSysInfo::kernelVersion() + "-" + QSysInfo::currentCpuArchitecture());
-	Query.addQueryItem("language", QString::number(theGUI->m_LanguageId));
+	Query.addQueryItem("language", QLocale::system().name());
 
 	QString UpdateKey = GetArguments(g_Certificate, L'\n', L':').value("UPDATEKEY");
 	if (UpdateKey.isEmpty())
@@ -177,7 +177,7 @@ void COnlineUpdater::GetUpdates(QObject* receiver, const char* member, const QVa
 		Query.addQueryItem("channel", ReleaseChannel);
 	}
 
-	if(Params.contains("manual")) Query.addQueryItem("auto", Params["manual"].toBool() ? "0" : "1");
+	Query.addQueryItem("auto", Params["manual"].toBool() ? "0" : "1");
 
 	//QString Test = Query.toString();
 
@@ -417,7 +417,7 @@ bool COnlineUpdater::AskDownload(const QVariantMap& Data)
 	mb.setCheckBoxVisible(m_CheckMode != eManual);
 
 	if (!UpdateUrl.isEmpty() || !DownloadUrl.isEmpty() || Data.contains("files")) {
-		mb.setStandardButtons(QDialogButtonBox::Yes | QDialogButtonBox::No);
+		mb.setStandardButtons(QDialogButtonBox::Yes | QDialogButtonBox::No | QDialogButtonBox::Cancel);
 		mb.setDefaultButton(QDialogButtonBox::Yes);
 	}
 	else
@@ -434,8 +434,16 @@ bool COnlineUpdater::AskDownload(const QVariantMap& Data)
 		else
 			QDesktopServices::openUrl(UpdateUrl);
 	}
-	else if (mb.isChecked())
-		theConf->SetValue("Options/IgnoredUpdates", m_IgnoredUpdates << VersionStr);
+	else 
+	{
+		if (mb.clickedStandardButton() == QDialogButtonBox::Cancel) {
+			theConf->SetValue("Updater/PendingUpdate", ""); 
+			theGUI->UpdateLabel();
+		}
+
+		if (mb.isChecked())
+			theConf->SetValue("Options/IgnoredUpdates", m_IgnoredUpdates << VersionStr);
+	}
 	return false;
 }
 

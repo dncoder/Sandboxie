@@ -1444,12 +1444,30 @@ _FX NTSTATUS Ipc_Api_DuplicateObject(PROCESS *proc, ULONG64 *parms)
 
     if (NT_SUCCESS(status)) {
 
-        status = ZwDuplicateObject(
-            SourceProcessHandle, SourceHandle,
-            TargetProcessHandle, &DuplicatedHandle,
-            DesiredAccess, HandleAttributes, Options);
+        HANDLE SourceProcessKernelHandle = (HANDLE)-1;
+        HANDLE TargetProcessKernelHandle = (HANDLE)-1;
 
-        *TargetHandle = DuplicatedHandle;
+        if (!IS_ARG_CURRENT_PROCESS(SourceProcessHandle)) 
+            status = Thread_GetKernelHandleForUserHandle(&SourceProcessKernelHandle, SourceProcessHandle);
+        if (NT_SUCCESS(status)) {
+
+            if (!IS_ARG_CURRENT_PROCESS(TargetProcessHandle))
+                status = Thread_GetKernelHandleForUserHandle(&TargetProcessKernelHandle, TargetProcessHandle);
+            if (NT_SUCCESS(status)) {
+
+                status = ZwDuplicateObject(
+                    SourceProcessKernelHandle, SourceHandle,
+                    TargetProcessKernelHandle, &DuplicatedHandle,
+                    DesiredAccess, HandleAttributes, Options);
+
+                *TargetHandle = DuplicatedHandle;
+            }
+        }
+
+        if (SourceProcessKernelHandle && !IS_ARG_CURRENT_PROCESS(SourceProcessKernelHandle))
+            ZwClose(SourceProcessKernelHandle);
+        if (TargetProcessKernelHandle && !IS_ARG_CURRENT_PROCESS(TargetProcessKernelHandle))
+            ZwClose(TargetProcessKernelHandle);
     }
 
     //
@@ -1904,19 +1922,12 @@ _FX void Ipc_Unload(void)
     if (Ipc_DirLock == NULL)
         return; // Early driver initialization failed
 
-    KIRQL irql;
-    KeRaiseIrql(APC_LEVEL, &irql);
-    ExAcquireResourceExclusiveLite(Ipc_DirLock, TRUE);
-
     DIR_OBJ_HANDLE* obj_handle = List_Head(&Ipc_ObjDirs);
     while (obj_handle) {
 
         ZwClose(obj_handle->handle);
         obj_handle = List_Next(obj_handle);
     }
-
-    ExReleaseResourceLite(Ipc_DirLock);
-    KeLowerIrql(irql);
 
     Mem_FreeLockResource(&Ipc_DirLock);
 }

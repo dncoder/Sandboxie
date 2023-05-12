@@ -63,6 +63,10 @@ copy %qtPath%\plugins\platforms\qwindows.dll %instPath%\platforms\
 mkdir %instPath%\styles
 copy %qtPath%\plugins\styles\qwindowsvistastyle.dll %instPath%\styles\
 
+IF %archPath% == ARM64 (
+mkdir %instPath%\tls
+copy %qtPath%\plugins\tls\qopensslbackend.dll %instPath%\tls\
+)
 
 ECHO Copying OpenSSL libraries
 IF %archPath% == Win32 (
@@ -167,9 +171,9 @@ copy /y %~dp0..\Sandboxie\install\Manifest0.txt %instPath%\
 copy /y %~dp0..\Sandboxie\install\Manifest1.txt %instPath%\
 copy /y %~dp0..\Sandboxie\install\Manifest2.txt %instPath%\
 
-ECHO Copying Sandboxie Live Updater
+ECHO Copying Sandboxie Tools
 
-copy /y %~dp0..\SandboxieLive\%archPath%\Release\UpdUtil.exe %instPath%\
+copy /y %~dp0..\SandboxieTools\%archPath%\Release\UpdUtil.exe %instPath%\
 
 
 

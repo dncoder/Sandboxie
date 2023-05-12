@@ -371,8 +371,11 @@ _FX NTSTATUS Key_OpenForMerge(
             *out_CopyHandle, KeyBasicInformation,
             &info, sizeof(KEY_BASIC_INFORMATION), &len);
 
-        if (NT_SUCCESS(status) || status == STATUS_BUFFER_OVERFLOW) {
-            // if (!Key_Delete_v2 &&
+        if(status == STATUS_BUFFER_OVERFLOW)
+            status = STATUS_SUCCESS;
+
+        if (!Key_Delete_v2)
+        if (NT_SUCCESS(status)) {
             if (IS_DELETE_MARK(&info.LastWriteTime))
                 status = STATUS_KEY_DELETED;
             else
@@ -752,10 +755,11 @@ _FX NTSTATUS Key_MergeCacheDummys(KEY_MERGE *merge, const WCHAR *TruePath)
 
                 WCHAR* FakePath = Dll_AllocTemp(TruePathLen * sizeof(WCHAR) + 1 + name_len * sizeof(WCHAR) + 10);
 
-                wmemcpy(FakePath, TruePath, TruePathLen * sizeof(WCHAR));
-                wcscat(FakePath, L"\\");
-                end = wcschr(FakePath, L'\0');
-                wmemcpy(end, ptr, name_len * sizeof(WCHAR));
+                wmemcpy(FakePath, TruePath, TruePathLen);
+                FakePath[TruePathLen++] = L'\\';
+                FakePath[TruePathLen] = L'\0';
+                end = &FakePath[TruePathLen];
+                wmemcpy(end, ptr, name_len);
                 end[name_len] = L'\0';
 
                 HANDLE KeyHandle;

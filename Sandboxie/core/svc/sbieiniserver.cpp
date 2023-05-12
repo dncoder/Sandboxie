@@ -1174,8 +1174,10 @@ ULONG SbieIniServer::AddSetting(MSG_HEADER* msg, bool insert)
     {
         if (_wcsicmp(I->Name.c_str(), req->setting) == 0) {
             // !insert -> append -> find last entry
-            if(!insert || pos == pSection->Entries.end())
+            if (!insert || pos == pSection->Entries.end()) {
                 pos = I;
+                if (!insert) pos++;
+            }
             if (_wcsicmp(I->Value.c_str(), req->value) == 0) {
                 // this value is already present, so let's abort right here
                 return STATUS_SUCCESS;
@@ -2133,8 +2135,13 @@ bool SbieIniServer::GetIniPath(WCHAR **IniPath,
             *IsUTF8 = TRUE;
     }
 
-    LONG rc = SbieApi_QueryConfAsIs(NULL, L"IniLocation", 0, path, 8);
-    if (rc == 0 && *path == L'H') {
+    LONG rc = SbieApi_QueryConfAsIs(NULL, L"IniLocation", 0, path, 260 * sizeof(WCHAR));
+    if (rc == 0 && *path == L'\\') {
+
+        if (wcsnicmp(path, L"\\??\\", 4) == 0)
+            wmemmove(path, path + 4, wcslen(path)+1 - 4);
+    }
+    else if (rc == 0 && *path == L'H') {
 
         //
         // Sandboxie.ini was last read from Sandboxie home directory

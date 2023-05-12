@@ -678,7 +678,6 @@ void CSandMan::CreateOldMenus()
 		m_pSetContainer->setData(CSettingsWindow::eAdvanced);
 
 		m_pArrangeGroups = m_pSandbox->addAction(tr("Set Layout and Groups"), this, SLOT(OnSettingsAction()));
-		m_pArrangeGroups->setCheckable(true);
 
 		m_pShowHidden = m_pSandbox->addAction(tr("Reveal Hidden Boxes"));
 		m_pShowHidden->setCheckable(true);
@@ -1432,7 +1431,7 @@ void CSandMan::timerEvent(QTimerEvent* pEvent)
 
 		bool bUpdatePending = !theConf->GetString("Updater/PendingUpdate").isEmpty();
 
-		if (m_bIconEmpty != (ActiveProcesses == 0) || m_bIconBusy != bIconBusy || m_iIconDisabled != (bForceProcessDisabled ? 1 : 0) || bUpdatePending)
+		if (m_bIconEmpty != (ActiveProcesses == 0) || m_bIconBusy != bIconBusy || m_iIconDisabled != (bForceProcessDisabled ? 1 : 0) || bUpdatePending || m_bIconSun)
 		{
 			m_bIconEmpty = (ActiveProcesses == 0);
 			m_bIconBusy = bIconBusy;
@@ -2057,7 +2056,7 @@ void CSandMan::OnLogSbieMessage(quint32 MsgCode, const QStringList& MsgData, qui
 {
 	if ((MsgCode & 0xFFFF) == 2198 ) // file migration progress
 	{
-		if (!IsDisableMessages())
+		if (!IsDisableMessages() && theConf->GetBool("Options/ShowMigrationProgress", true))
 			m_pPopUpWindow->ShowProgress(MsgCode, MsgData, ProcessId);
 		return;
 	}
@@ -2153,28 +2152,55 @@ bool CSandMan::CheckCertificate(QWidget* pWidget)
 void CSandMan::UpdateCertState()
 {
 	g_CertInfo.State = theAPI->GetCertState();
-
-#ifdef _DEBUG
-	int CertificateStatus = theConf->GetInt("Debug/CertificateStatus", -1);
-	switch (CertificateStatus)
+	if (g_CertInfo.valid)
 	{
-	case 0: // no certificate
-		g_CertInfo.State = 0; 
-		break;
-	case 1: // evaluation/subscription/business cert expired
-		g_CertInfo.valid = 0;
-		g_CertInfo.expired = 1;
-		break;
-	case 2: // version bound cert expired but valid for this build
-		g_CertInfo.expired = 1;
-		break;
-	case 3: // version bound cert expired and not valid for this build
-		g_CertInfo.valid = 0;
-		g_CertInfo.expired = 1;
-		g_CertInfo.outdated = 1;
-		break;
+		auto Args = GetArguments(g_Certificate, L'\n', L':');
+		QString Type = Args.value("TYPE").toUpper();
+		if (Type.contains("CONTRIBUTOR") || Type.contains("GREAT_PATREON") || Type.contains("HUGE"))
+			g_CertInfo.insider = true;
+
+		// behave as if there would be no certificate at all
+		if (theConf->GetBool("Debug/IgnoreCertificate", false))
+			g_CertInfo.State = 0;
+		else
+		{
+			// simulate certificate being about to expire in 3 days from now
+			if (theConf->GetBool("Debug/CertFakeAboutToExpire", false))
+				g_CertInfo.expirers_in_sec = 3 * 24 * 3600;
+
+			// simulate certificate having expired but being in the grace period
+			if (theConf->GetBool("Debug/CertFakeGracePeriode", false))
+				g_CertInfo.grace_period = 1;
+
+			// simulate a subscription type certificate having expired 
+			if (theConf->GetBool("Debug/CertFakeOld", false)) {
+				g_CertInfo.valid = 0;
+				g_CertInfo.expired = 1;
+			}
+
+			// simulate a perpetual use certificate being outside the update window
+			if (theConf->GetBool("Debug/CertFakeExpired", false)) {
+				// still valid
+				g_CertInfo.expired = 1;
+			}
+
+			// simulate a perpetual use certificate being outside the update window
+			// and having been applied to a version built after the update window has ended
+			if (theConf->GetBool("Debug/CertFakeOutdated", false)) {
+				g_CertInfo.valid = 0;
+				g_CertInfo.expired = 1;
+				g_CertInfo.outdated = 1;
+			}
+
+			// simulate this being a business certificate - only contributors and other insiders
+			if (g_CertInfo.insider && theConf->GetBool("Debug/CertFakeBusiness", false))
+				g_CertInfo.business = 1;
+
+			// simulate this being a evaluation certificate
+			if (theConf->GetBool("Debug/CertFakeEvaluation", false))
+				g_CertInfo.evaluation = 1;
+		}
 	}
-#endif
 
 	if (g_CertInfo.evaluation)
 	{
@@ -2211,9 +2237,9 @@ void CSandMan::OnQueuedRequest(quint32 ClientPid, quint32 ClientTid, quint32 Req
 
 #include "SandManRecovery.cpp"
 
-int CSandMan::ShowQuestion(const QString& question, const QString& checkBoxText, bool* checkBoxSetting, int buttons, int defaultButton, int type)
+int CSandMan::ShowQuestion(const QString& question, const QString& checkBoxText, bool* checkBoxSetting, int buttons, int defaultButton, int type, QWidget* pParent)
 {
-	int ret =  CCheckableMessageBox::question(this, "Sandboxie-Plus", question, checkBoxText, checkBoxSetting, (QDialogButtonBox::StandardButtons)buttons, (QDialogButtonBox::StandardButton)defaultButton, (QMessageBox::Icon)type);
+	int ret =  CCheckableMessageBox::question(pParent, "Sandboxie-Plus", question, checkBoxText, checkBoxSetting, (QDialogButtonBox::StandardButtons)buttons, (QDialogButtonBox::StandardButton)defaultButton, (QMessageBox::Icon)type);
 	QTimer::singleShot(10, [this]() {
 		this->raise();
 	});
@@ -3219,6 +3245,12 @@ void CSandMan::LoadLanguage()
 	CPanelView::m_CopyCell = tr("Copy Cell");
 	CPanelView::m_CopyRow = tr("Copy Row");
 	CPanelView::m_CopyPanel = tr("Copy Panel");
+	CFinder::m_CaseInsensitive = tr("Case Sensitive");
+	CFinder::m_RegExpStr = tr("RegExp");
+	CFinder::m_Highlight = tr("Highlight");
+	CFinder::m_CloseStr = tr("Close");
+	CFinder::m_FindStr = tr("&Find ...");
+	CFinder::m_AllColumns = tr("All columns");
 }
 
 void CSandMan::LoadLanguage(const QString& Lang, const QString& Module, int Index)
@@ -3254,7 +3286,7 @@ void CSandMan::OnHelp()
 	//	QDesktopServices::openUrl(QUrl("https://sandboxie-plus.com/go.php?to=donate"));
 	//else 
 	if (sender() == m_pContribution)
-		QDesktopServices::openUrl(QUrl("https://sandboxie-plus.com/go.php?to=sbie-contribute"));
+		QDesktopServices::openUrl(QUrl("https://sandboxie-plus.com/go.php?to=sbie-contribution"));
 	else if (sender() == m_pManual)
 		QDesktopServices::openUrl(QUrl("https://sandboxie-plus.com/go.php?to=sbie-docs"));
 	else if (sender() == m_pForum)

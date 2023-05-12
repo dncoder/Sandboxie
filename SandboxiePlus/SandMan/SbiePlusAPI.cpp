@@ -34,9 +34,9 @@ CBoxedProcess* CSbiePlusAPI::NewBoxedProcess(quint32 ProcessId, class CSandBox* 
 	return new CSbieProcess(ProcessId, pBox);
 }
 
-CBoxedProcessPtr CSbiePlusAPI::OnProcessBoxed(quint32 ProcessId, const QString& Path, const QString& Box, quint32 ParentId)
+CBoxedProcessPtr CSbiePlusAPI::OnProcessBoxed(quint32 ProcessId, const QString& Path, const QString& Box, quint32 ParentId, const QString& CmdLine)
 {
-	CBoxedProcessPtr pProcess = CSbieAPI::OnProcessBoxed(ProcessId, Path, Box, ParentId);
+	CBoxedProcessPtr pProcess = CSbieAPI::OnProcessBoxed(ProcessId, Path, Box, ParentId, CmdLine);
 	if (!pProcess.isNull() && pProcess->GetFileName().indexOf(theAPI->GetSbiePath(), 0, Qt::CaseInsensitive) != 0) {
 		CSandBoxPlus* pBox = pProcess.objectCast<CSbieProcess>()->GetBox();
 		pBox->m_RecentPrograms.insert(pProcess->GetProcessName());
@@ -143,6 +143,7 @@ CSandBoxPlus::CSandBoxPlus(const QString& BoxName, class CSbieAPI* pAPI) : CSand
 
 	m_BoxType = eDefault;
 	m_BoxDel = false;
+	m_NoForce = false;
 	m_BoxColor = QColor(Qt::yellow).rgb();
 }
 
@@ -376,6 +377,7 @@ void CSandBoxPlus::UpdateDetails()
 	m_BoxType = GetTypeImpl();
 
 	m_BoxDel = GetBool("AutoDelete", false);
+	m_NoForce = GetBool("DisableForceRules", false);
 
 	QStringList BorderCfg = GetText("BorderColor").split(",");
 	m_BoxColor = QColor("#" + BorderCfg[0].mid(5, 2) + BorderCfg[0].mid(3, 2) + BorderCfg[0].mid(1, 2)).rgb();

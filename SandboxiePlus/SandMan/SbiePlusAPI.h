@@ -47,7 +47,7 @@ protected:
 	virtual CSandBox*		NewSandBox(const QString& BoxName, class CSbieAPI* pAPI);
 	virtual CBoxedProcess*	NewBoxedProcess(quint32 ProcessId, class CSandBox* pBox);
 
-	virtual CBoxedProcessPtr OnProcessBoxed(quint32 ProcessId, const QString& Path, const QString& Box, quint32 ParentId);
+	virtual CBoxedProcessPtr OnProcessBoxed(quint32 ProcessId, const QString& Path, const QString& Box, quint32 ParentId, const QString& CmdLine);
 
 	int						m_JobCount;
 	QMultiMap<quint32, QString> m_WindowMap;
@@ -145,6 +145,7 @@ public:
 
 	EBoxTypes				GetType() const { return m_BoxType; }
 	bool					IsAutoDelete() const { return m_BoxDel; }
+	bool					IsForceDisabled() const { return m_NoForce; }
 	QRgb					GetColor() const { return m_BoxColor; }
 	
 	class COptionsWindow*	m_pOptionsWnd;
@@ -229,5 +230,6 @@ protected:
 
 	EBoxTypes				m_BoxType;
 	bool					m_BoxDel;
+	bool					m_NoForce;
 	QRgb					m_BoxColor;
 };

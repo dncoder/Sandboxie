@@ -25,7 +25,8 @@ CSbieView::CSbieView(QWidget* parent) : CPanelView(parent)
 	m_pMainLayout->setContentsMargins(0,0,0,0);
 	this->setLayout(m_pMainLayout);
 
-	//m_UserConfigChanged = false;
+	m_UserConfigChanged = false;
+	m_HoldExpand = false;
 
 	m_pSbieModel = new CSbieModel(this);
 	m_pSbieModel->SetTree(true);
@@ -165,7 +166,7 @@ void CSbieView::CreateMenu()
 			m_pMenuRunStart = NULL;
 		//m_pMenuRunTools->addSeparator();
 		m_pMenuAutoRun = m_pMenuRun->addAction(CSandMan::GetIcon("ReloadIni"), tr("Execute Autorun Entries"), this, SLOT(OnSandBoxAction()));
-		m_pMenuRunTools = m_pMenuRun->addMenu(CSandMan::GetIcon("Maintenance"), tr("More Tools"));
+		m_pMenuRunTools = m_pMenuRun->addMenu(CSandMan::GetIcon("Maintenance"), tr("Standard Applications"));
 			m_pMenuRunBrowser = m_pMenuRunTools->addAction(CSandMan::GetIcon("Internet"), tr("Default Web Browser"), this, SLOT(OnSandBoxAction()));
 			m_pMenuRunMailer = m_pMenuRunTools->addAction(CSandMan::GetIcon("Email"), tr("Default eMail Client"), this, SLOT(OnSandBoxAction()));
 
@@ -176,10 +177,10 @@ void CSbieView::CreateMenu()
 			m_pMenuRunTools->addSeparator();
 			m_pMenuRunCmd = m_pMenuRunTools->addAction(CSandMan::GetIcon("Cmd"), tr("Command Prompt"), this, SLOT(OnSandBoxAction()));
 			m_pMenuRunCmdAdmin = m_pMenuRunTools->addAction(CSandMan::GetIcon("Cmd"), tr("Command Prompt (as Admin)"), this, SLOT(OnSandBoxAction()));
-#ifdef _WIN64
+#ifndef _WIN64
 			if(CSbieAPI::IsWow64())
-				m_pMenuRunCmd32 = m_pMenuRunTools->addAction(CSandMan::GetIcon("Cmd"), tr("Command Prompt (32-bit)"), this, SLOT(OnSandBoxAction()));
 #endif
+				m_pMenuRunCmd32 = m_pMenuRunTools->addAction(CSandMan::GetIcon("Cmd"), tr("Command Prompt (32-bit)"), this, SLOT(OnSandBoxAction()));
 		m_pMenuRun->addSeparator();
 		m_iMenuRun = m_pMenuRun->actions().count();
 	m_pMenuEmptyBox = m_pMenuBox->addAction(CSandMan::GetIcon("EmptyAll"), tr("Terminate All Programs"), this, SLOT(OnSandBoxAction()));
@@ -221,6 +222,8 @@ void CSbieView::CreateMenu()
 		m_pMenuPresets->addSeparator();
 		m_pMenuPresetsRecovery = m_pMenuPresets->addAction(tr("Immediate Recovery"), this, SLOT(OnSandBoxAction()));
 		m_pMenuPresetsRecovery->setCheckable(true);
+		m_pMenuPresetsForce = m_pMenuPresets->addAction(tr("Disable Force Rules"), this, SLOT(OnSandBoxAction()));
+		m_pMenuPresetsForce->setCheckable(true);
 	
 	m_pMenuTools = m_pMenuBox->addMenu(CSandMan::GetIcon("Maintenance"), tr("Sandbox Tools"));
 		m_pMenuDuplicate = m_pMenuTools->addAction(CSandMan::GetIcon("Duplicate"), tr("Duplicate Box Config"), this, SLOT(OnSandBoxAction()));
@@ -351,6 +354,7 @@ void CSbieView::CreateOldMenu()
 		m_pMenuPresetsShares = NULL;
 
 		m_pMenuPresetsRecovery = NULL;
+		m_pMenuPresetsForce = NULL;
 		
 
 	// Process Menu
@@ -454,8 +458,11 @@ void CSbieView::Refresh()
 
 				QModelIndex ModelIndex = m_pSbieModel->FindIndex(ID);
 
-				if (m_pSbieModel->GetType(ModelIndex) == CSbieModel::eProcess)
+				if (m_pSbieModel->GetType(ModelIndex) == CSbieModel::eProcess) {
+					m_HoldExpand = true;
 					m_pSbieTree->expand(m_pSortProxy->mapFromSource(ModelIndex));
+					m_HoldExpand = false;
+				}
 				else 
 				{
 					QString Name;
@@ -464,8 +471,11 @@ void CSbieView::Refresh()
 					else if (m_pSbieModel->GetType(ModelIndex) == CSbieModel::eBox)
 						Name = m_pSbieModel->GetSandBox(ModelIndex)->GetName();
 
-					if (!m_Collapsed.contains(Name))
+					if (!m_Collapsed.contains(Name)) {
+						m_HoldExpand = true;
 						m_pSbieTree->expand(m_pSortProxy->mapFromSource(ModelIndex));
+						m_HoldExpand = false;
+					}
 				}
 			}
 		});
@@ -563,6 +573,7 @@ bool CSbieView::UpdateMenu(bool bAdvanced, const CSandBoxPtr &pBox, int iSandBox
 		m_pMenuPresetsINet->setChecked(pBox && pBox.objectCast<CSandBoxPlus>()->IsINetBlocked());
 		m_pMenuPresetsShares->setChecked(pBox && pBox.objectCast<CSandBoxPlus>()->HasSharesAccess());
 		m_pMenuPresetsRecovery->setChecked(pBox && pBox->GetBool("AutoRecover", false));
+		m_pMenuPresetsForce->setChecked(pBox && pBox->GetBool("DisableForceRules", false));
 	}
 
 	m_pMenuBrowse->setEnabled(iSandBoxeCount == 1);
@@ -921,7 +932,7 @@ void CSbieView::OnGroupAction(QAction* Action)
 		Refresh();
 	}
 
-	//m_UserConfigChanged = true;
+	m_UserConfigChanged = true;
 	UpdateMoveMenu();
 
 	SaveUserConfig();
@@ -1001,7 +1012,7 @@ QString CSbieView::AddNewGroup()
 	m_Groups[Parent].append(Name);
 
 	
-	//m_UserConfigChanged = true;
+	m_UserConfigChanged = true;
 	UpdateMoveMenu();
 
 	SaveUserConfig();
@@ -1116,6 +1127,8 @@ void CSbieView::OnSandBoxAction(QAction* Action, const QList<CSandBoxPtr>& SandB
 		SandBoxes.first().objectCast<CSandBoxPlus>()->SetAllowShares(m_pMenuPresetsShares->isChecked());
 	else if (Action == m_pMenuPresetsRecovery)
 		m_pMenuPresetsRecovery->setChecked(SandBoxes.first()->SetBoolSafe("AutoRecover", m_pMenuPresetsRecovery->isChecked()));
+	else if (Action == m_pMenuPresetsForce)
+		m_pMenuPresetsForce->setChecked(SandBoxes.first()->SetBoolSafe("DisableForceRules", m_pMenuPresetsForce->isChecked()));
 	else if (Action == m_pMenuOptions)
 		ShowOptions(SandBoxes.first());
 	else if (Action == m_pMenuBrowse)
@@ -1435,7 +1448,7 @@ void CSbieView::OnSandBoxAction(QAction* Action, const QList<CSandBoxPtr>& SandB
 
 	CSandMan::CheckResults(Results);
 
-	//m_UserConfigChanged = true;
+	m_UserConfigChanged = true;
 	SaveUserConfig();
 }
 
@@ -1738,16 +1751,25 @@ void CSbieView::UpdateRunMenu(const CSandBoxPtr& pBox)
 	{
 		StrPair NameCmd = Split2(RunOption, "|");
 
+		StrPair NameIcon = Split2(NameCmd.first, ",");
+
 		QMenu* pMenu;
-		StrPair FolderName = Split2(NameCmd.first, "\\", true);
+		StrPair FolderName = Split2(NameIcon.first, "\\", true);
 		if (FolderName.second.isEmpty()) {
 			FolderName.second = FolderName.first;
 			pMenu = m_pMenuRun;
 		} else
-			pMenu = GetMenuFolder(FolderName.first, m_pMenuRun, m_RunFolders);
+			pMenu = GetMenuFolder(FolderName.first.replace("\\", "/"), m_pMenuRun, m_RunFolders);
+
+		StrPair IconIndex = Split2(NameIcon.second, ",", true);
 
 		QAction* pAction = pMenu->addAction(FolderName.second, this, SLOT(OnSandBoxAction()));
-		pAction->setIcon(m_IconProvider.icon(QFileInfo(pBoxEx->GetCommandFile(NameCmd.second))));
+		if (IconIndex.first.isEmpty())
+			pAction->setIcon(m_IconProvider.icon(QFileInfo(pBoxEx->GetCommandFile(NameCmd.second))));
+		else if(IconIndex.second.isEmpty())
+			pAction->setIcon(LoadWindowsIcon(pBoxEx->GetCommandFile(NameCmd.second), IconIndex.first.toInt()));
+		else
+			pAction->setIcon(LoadWindowsIcon(IconIndex.first, IconIndex.second.toInt()));
 		pAction->setData(NameCmd.second);
 	}
 
@@ -1817,6 +1839,9 @@ void CSbieView::ShowOptions(const QString& Name)
 
 void CSbieView::ChangeExpand(const QModelIndex& index, bool bExpand)
 {
+	if (m_HoldExpand)
+		return;
+
 	QModelIndex ModelIndex = m_pSortProxy->mapToSource(index);
 
 	if (m_pSbieModel->GetType(ModelIndex) == CSbieModel::eProcess)
@@ -1833,27 +1858,34 @@ void CSbieView::ChangeExpand(const QModelIndex& index, bool bExpand)
 	else
 		m_Collapsed.insert(Name);
 
-	//m_UserConfigChanged = true;
+	m_UserConfigChanged = true;
 
 	SaveUserConfig();
 }
 
 void CSbieView::ReloadUserConfig()
 {
-	m_Groups.clear();
+	if (!theAPI->IsConnected())
+		return;
 
-	QString Grouping = theConf->GetString("UIConfig/BoxDisplayOrder");
-	if(Grouping.isEmpty())
-		Grouping = theAPI->GetUserSettings()->GetText("BoxDisplayOrder");
-	CSbieView__ParseGroup(Grouping, m_Groups);
+	m_Groups = theAPI->GetUserSettings()->GetTextMap("BoxGrouping");
+	if (m_Groups.isEmpty()) { // try legacy entries
+		QString Grouping = theConf->GetString("UIConfig/BoxDisplayOrder");
+		if (Grouping.isEmpty())
+			Grouping = theAPI->GetUserSettings()->GetText("BoxDisplayOrder");
+		CSbieView__ParseGroup(Grouping, m_Groups);
+	}
 
 	UpdateMoveMenu();
 
-	QString Collapsed = theConf->GetString("UIConfig/BoxCollapsedView");
-	if (Collapsed.isEmpty())
-		Collapsed = theAPI->GetUserSettings()->GetText("BoxCollapsedView");
-	
-	m_Collapsed = ListToSet(SplitStr(Collapsed, ","));
+	QMap<QString, QStringList> Collapsed = theAPI->GetUserSettings()->GetTextMap("CollapsedBoxes");
+	m_Collapsed = ListToSet(Collapsed[""]);
+	if (m_Collapsed.isEmpty()) { // try legacy entries
+		QString Collapsed = theConf->GetString("UIConfig/BoxCollapsedView");
+		if (Collapsed.isEmpty())
+			Collapsed = theAPI->GetUserSettings()->GetText("BoxCollapsedView");
+		m_Collapsed = ListToSet(SplitStr(Collapsed, ","));
+	}
 
 	ClearUserUIConfig();
 }
@@ -1886,27 +1918,31 @@ void CSbieView::ClearUserUIConfig(const QMap<QString, CSandBoxPtr> AllBoxes)
 
 void CSbieView::SaveUserConfig()
 {
-	//if (!m_UserConfigChanged)
-	//	return;
-	//m_UserConfigChanged = false;
+	if (!m_UserConfigChanged)
+		return;
+	m_UserConfigChanged = false;
 
-	if (!m_Groups.isEmpty()) {
+	if (!theAPI->IsConnected())
+		return;
 
-		auto Groups = m_Groups;
-		// clean up non existing entries
-		for (auto I = Groups.begin(); I != Groups.end(); ++I) {
-			foreach(const QString &Name, I.value()) {
-				if (theAPI->GetBoxByName(Name).isNull() && !Groups.contains(Name))
-					I->removeAll(Name);
-			}
+	theAPI->GetUserSettings()->SetRefreshOnChange(false);
+
+	auto Groups = m_Groups;
+	// clean up non existing entries
+	for (auto I = Groups.begin(); I != Groups.end(); ++I) {
+		foreach(const QString &Name, I.value()) {
+			if (theAPI->GetBoxByName(Name).isNull() && !Groups.contains(Name))
+				I->removeAll(Name);
 		}
-
-		QString Grouping = CSbieView__SerializeGroup(Groups);
-		theConf->SetValue("UIConfig/BoxDisplayOrder", Grouping);
 	}
+	theAPI->GetUserSettings()->SetTextMap("BoxGrouping", Groups);
 
-	QString Collapsed = SetToList(m_Collapsed).join(",");
-	theConf->SetValue("UIConfig/BoxCollapsedView", Collapsed);
+	QMap<QString, QStringList> Collapsed;
+	Collapsed.insert("", SetToList(m_Collapsed));
+	theAPI->GetUserSettings()->SetTextMap("CollapsedBoxes", Collapsed);
+
+	theAPI->GetUserSettings()->SetRefreshOnChange(true);
+	theAPI->CommitIniChanges();
 }
 
 void CSbieView::OnMoveItem(const QString& Name, const QString& To, int row)
@@ -1924,7 +1960,7 @@ void CSbieView::OnMoveItem(const QString& Name, const QString& To, int row)
 		Refresh();
 	}
 
-	//m_UserConfigChanged = true;
+	m_UserConfigChanged = true;
 	UpdateMoveMenu();
 
 	SaveUserConfig();

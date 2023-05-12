@@ -7,6 +7,7 @@
 #include "../MiscHelpers/Common/ComboInputDialog.h"
 #include "../MiscHelpers/Common/SettingsWidgets.h"
 #include "Helpers/WinAdmin.h"
+#include "../Wizards/TemplateWizard.h"
 
 
 class NoEditDelegate : public QStyledItemDelegate {
@@ -32,12 +33,19 @@ public:
 
 class ProgramsDelegate : public QStyledItemDelegate {
 public:
-	ProgramsDelegate(COptionsWindow* pOptions, QTreeWidget* pTree, int Column, QObject* parent = 0) : QStyledItemDelegate(parent) { m_pOptions = pOptions; m_pTree = pTree; m_Column = Column; }
+	ProgramsDelegate(COptionsWindow* pOptions, QTreeWidget* pTree, int Column, QObject* parent = 0) : QStyledItemDelegate(parent) {
+		m_pOptions = pOptions; 
+		m_pTree = pTree; 
+		m_Column = (m_Group = (Column == -2)) ? -1 : Column;
+	}
 
 	virtual QWidget* createEditor(QWidget* parent, const QStyleOptionViewItem& option, const QModelIndex& index) const {
 		QTreeWidgetItem* pItem = ((QTreeWidgetHacker*)m_pTree)->itemFromIndex(index);
 		if (!pItem->data(index.column(), Qt::UserRole).isValid())
 			return NULL;
+
+		if(m_Group && !pItem->parent()) // for groups use simple edit
+			return QStyledItemDelegate::createEditor(parent, option, index);
 
 		if (m_Column == -1 || pItem->data(m_Column, Qt::UserRole).toInt() == COptionsWindow::eProcess) {
 			QComboBox* pBox = new QComboBox(parent);
@@ -69,8 +77,11 @@ public:
 			});
 
 			connect(pBox, qOverload<int>(&QComboBox::currentIndexChanged), [pBox](int index){
-				if (index != -1)
-					pBox->setProperty("value", pBox->itemData(index));
+				if (index != -1) {
+					QString Program = pBox->itemData(index).toString();
+					pBox->setProperty("value", Program);
+					pBox->lineEdit()->setReadOnly(Program.left(1) == "<");
+				}
 			});
 
 			return pBox;
@@ -88,6 +99,7 @@ public:
 			QString Program = pItem->data(index.column(), Qt::UserRole).toString();
 
 			pBox->setProperty("value", Program);
+			pBox->lineEdit()->setReadOnly(Program.left(1) == "<");
 
 			int Index = pBox->findData(Program);
 			pBox->setCurrentIndex(Index);
@@ -99,10 +111,11 @@ public:
 	}
 
 	virtual void setModelData(QWidget* editor, QAbstractItemModel* model, const QModelIndex& index) const {
+		QTreeWidgetItem* pItem = ((QTreeWidgetHacker*)m_pTree)->itemFromIndex(index);
 
 		QComboBox* pBox = qobject_cast<QComboBox*>(editor);
 		if (pBox) {
-			QTreeWidgetItem* pItem = ((QTreeWidgetHacker*)m_pTree)->itemFromIndex(index);
+			
 			QString Value = pBox->property("value").toString();
 			pItem->setText(index.column(), pBox->currentText());
 			//QString Text = pBox->currentText();
@@ -112,17 +125,27 @@ public:
 
 		QLineEdit* pEdit = qobject_cast<QLineEdit*>(editor);
 		if (pEdit) {
-			QTreeWidgetItem* pItem = ((QTreeWidgetHacker*)m_pTree)->itemFromIndex(index);
 			pItem->setText(index.column(), pEdit->text());
-			pItem->setData(index.column(), Qt::UserRole, pEdit->text());
+			QString Value = pEdit->text();
+			if (m_Group) Value = "<" + Value + ">";
+			pItem->setData(index.column(), Qt::UserRole, Value);
 		}
+	}
+
+	QSize sizeHint(const QStyleOptionViewItem &option, const QModelIndex &index) const
+	{
+		QSize size = QStyledItemDelegate::sizeHint(option, index);
+		if(size.height() < 20) size.setHeight(20); // ensure enough room for the combo box
+		return size;
 	}
 
 protected:
 	COptionsWindow* m_pOptions;
 	QTreeWidget* m_pTree;
 	int m_Column;
+	bool m_Group;
 };
+
 
 //////////////////////////////////////////////////////////////////////////
 // COptionsWindow
@@ -140,6 +163,7 @@ COptionsWindow::COptionsWindow(const QSharedPointer<CSbieIni>& pBox, const QStri
 	QSharedPointer<CSandBoxPlus> pBoxPlus = m_pBox.objectCast<CSandBoxPlus>();
 	if (!pBoxPlus.isNull())
 		m_Programs = pBoxPlus->GetRecentPrograms();
+	m_Programs.insert("program.exe");
 
 	Qt::WindowFlags flags = windowFlags();
 	flags |= Qt::CustomizeWindowHint;
@@ -186,7 +210,8 @@ COptionsWindow::COptionsWindow(const QSharedPointer<CSbieIni>& pBox, const QStri
 	ui.tabsSecurity->setCurrentIndex(0);
 	ui.tabsSecurity->setTabIcon(0, CSandMan::GetIcon("Shield7"));
 	ui.tabsSecurity->setTabIcon(1, CSandMan::GetIcon("Fence"));
-	ui.tabsSecurity->setTabIcon(2, CSandMan::GetIcon("Shield12"));
+	ui.tabsSecurity->setTabIcon(2, CSandMan::GetIcon("Shield2"));
+	ui.tabsSecurity->setTabIcon(3, CSandMan::GetIcon("Shield12"));
 
 	ui.tabsForce->setCurrentIndex(0);
 	ui.tabsForce->setTabIcon(0, CSandMan::GetIcon("Force"));
@@ -348,6 +373,7 @@ COptionsWindow::COptionsWindow(const QSharedPointer<CSbieIni>& pBox, const QStri
 	AddIconToLabel(ui.lblToken, CSandMan::GetIcon("Sandbox").pixmap(size,size));
 	AddIconToLabel(ui.lblIsolation, CSandMan::GetIcon("Fence").pixmap(size,size));
 	AddIconToLabel(ui.lblAccess, CSandMan::GetIcon("NoAccess").pixmap(size,size));
+	AddIconToLabel(ui.lblProtection, CSandMan::GetIcon("EFence").pixmap(size,size));
 	AddIconToLabel(ui.lblMonitor, CSandMan::GetIcon("Monitor").pixmap(size,size));
 	AddIconToLabel(ui.lblTracing, CSandMan::GetIcon("SetLogging").pixmap(size,size));
 
@@ -410,7 +436,7 @@ COptionsWindow::COptionsWindow(const QSharedPointer<CSbieIni>& pBox, const QStri
 	connect(ui.btnAddProg, SIGNAL(clicked(bool)), this, SLOT(OnAddProg()));
 	connect(ui.btnDelProg, SIGNAL(clicked(bool)), this, SLOT(OnDelProg()));
 	connect(ui.chkShowGroupTmpl, SIGNAL(clicked(bool)), this, SLOT(OnShowGroupTmpl()));
-	ui.treeGroups->setItemDelegateForColumn(0, new ProgramsDelegate(this, ui.treeGroups, -1, this));
+	ui.treeGroups->setItemDelegateForColumn(0, new ProgramsDelegate(this, ui.treeGroups, -2, this));
 	connect(ui.treeGroups, SIGNAL(itemChanged(QTreeWidgetItem *, int)), this, SLOT(OnGroupsChanged(QTreeWidgetItem *, int)));
 	//
 
@@ -426,7 +452,8 @@ COptionsWindow::COptionsWindow(const QSharedPointer<CSbieIni>& pBox, const QStri
 	//ui.treeForced->setEditTriggers(QAbstractItemView::DoubleClicked);
 	ui.treeForced->setItemDelegateForColumn(0, new NoEditDelegate(this));
 	ui.treeForced->setItemDelegateForColumn(1, new ProgramsDelegate(this, ui.treeForced, -1, this));
-	connect(ui.treeForced, SIGNAL(itemChanged(QTreeWidgetItem *, int)), this, SLOT(OnForcedChanged(QTreeWidgetItem *, int)));
+	connect(ui.treeForced, SIGNAL(itemChanged(QTreeWidgetItem *, int)), this, SLOT(OnForcedChanged()));
+	connect(ui.chkDisableForced, SIGNAL(clicked(bool)), this, SLOT(OnForcedChanged()));
 
 	connect(ui.btnBreakoutProg, SIGNAL(clicked(bool)), this, SLOT(OnBreakoutProg()));
 	QMenu* pFileBtnMenu2 = new QMenu(ui.btnBreakoutProg);
@@ -493,6 +520,11 @@ COptionsWindow::COptionsWindow(const QSharedPointer<CSbieIni>& pBox, const QStri
 	connect(ui.treeTemplates, SIGNAL(itemChanged(QTreeWidgetItem*, int)), this, SLOT(OnTemplateClicked(QTreeWidgetItem*, int)));
 	connect(ui.treeTemplates, SIGNAL(itemDoubleClicked(QTreeWidgetItem*, int)), this, SLOT(OnTemplateDoubleClicked(QTreeWidgetItem*, int)));
 	connect(ui.btnAddTemplate, SIGNAL(clicked(bool)), this, SLOT(OnAddTemplates()));
+	QMenu* pTmplBtnMenu = new QMenu(ui.btnAddTemplate);
+	for(int i = 1; i < CTemplateWizard::TmplMax; i++)
+		pTmplBtnMenu->addAction(tr("Add %1 Template").arg(CTemplateWizard::GetTemplateLabel((CTemplateWizard::ETemplateType)i)), this, SLOT(OnTemplateWizard()))->setData(i);
+	ui.btnAddTemplate->setPopupMode(QToolButton::MenuButtonPopup);
+	ui.btnAddTemplate->setMenu(pTmplBtnMenu);
 	connect(ui.btnDelTemplate, SIGNAL(clicked(bool)), this, SLOT(OnDelTemplates()));
 	connect(ui.chkScreenReaders, SIGNAL(clicked(bool)), this, SLOT(OnScreenReaders()));
 	//
@@ -503,7 +535,7 @@ COptionsWindow::COptionsWindow(const QSharedPointer<CSbieIni>& pBox, const QStri
 	connect(ui.btnEditIni, SIGNAL(clicked(bool)), this, SLOT(OnEditIni()));
 	connect(ui.btnSaveIni, SIGNAL(clicked(bool)), this, SLOT(OnSaveIni()));
 	connect(ui.btnCancelEdit, SIGNAL(clicked(bool)), this, SLOT(OnCancelEdit()));
-	connect(ui.txtIniSection, SIGNAL(textChanged()), this, SLOT(OnOptChanged()));
+	connect(ui.txtIniSection, SIGNAL(textChanged()), this, SLOT(OnIniChanged()));
 
 	//
 
@@ -955,14 +987,14 @@ void COptionsWindow::reject()
 	this->close();
 }
 
-void COptionsWindow::SetProgramItem(QString Program, QTreeWidgetItem* pItem, int Column, const QString& Sufix)
+void COptionsWindow::SetProgramItem(QString Program, QTreeWidgetItem* pItem, int Column, const QString& Sufix, bool bList)
 {
 	pItem->setData(Column, Qt::UserRole, Program);
 	if (Program.left(1) == "<")
 		Program = tr("Group: %1").arg(Program.mid(1, Program.length() - 2));
 	else if (Program.isEmpty() || Program == "*")
 		Program = tr("All Programs");
-	else
+	else if(bList)
 		m_Programs.insert(Program);
 	pItem->setText(Column, Program + Sufix);
 }
@@ -1005,7 +1037,7 @@ void COptionsWindow::OnTab(QWidget* pTab)
 	if (pTab == ui.tabEdit)
 	{
 		LoadIniSection();
-		ui.txtIniSection->setReadOnly(true);
+		//ui.txtIniSection->setReadOnly(true);
 	}
 	else 
 	{
@@ -1051,8 +1083,6 @@ void COptionsWindow::UpdateCurrentTab()
 	}
 	else if (m_pCurrentTab == ui.tabInternet || m_pCurrentTab == ui.tabINet)
 	{
-		CheckINetBlock();
-
 		LoadBlockINet();
 	}
 	else if (m_pCurrentTab == ui.tabCOM) {
@@ -1091,7 +1121,7 @@ void COptionsWindow::SetIniEdit(bool bEnable)
 	}
 	ui.btnSaveIni->setEnabled(bEnable);
 	ui.btnCancelEdit->setEnabled(bEnable);
-	ui.txtIniSection->setReadOnly(!bEnable);
+	//ui.txtIniSection->setReadOnly(!bEnable);
 	ui.btnEditIni->setEnabled(!bEnable);
 }
 
@@ -1106,9 +1136,19 @@ void COptionsWindow::OnSaveIni()
 	SetIniEdit(false);
 }
 
+void COptionsWindow::OnIniChanged()
+{
+	if (m_HoldChange)
+		return;
+	if(ui.btnEditIni->isEnabled())
+		SetIniEdit(true);
+	ui.buttonBox->button(QDialogButtonBox::Apply)->setEnabled(true);
+}
+
 void COptionsWindow::OnCancelEdit()
 {
 	SetIniEdit(false);
+	LoadIniSection();
 }
 
 void COptionsWindow::LoadIniSection()

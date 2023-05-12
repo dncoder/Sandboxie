@@ -366,8 +366,7 @@ _FX BOOLEAN Proc_Init(void)
     ANSI_STRING ansi;
     NTSTATUS status;
 
-    if (!Dll_CompartmentMode)
-        Dll_ElectronWorkaround = Config_GetSettingsForImageName_bool(L"UseElectronWorkaround", FALSE);
+    Dll_ElectronWorkaround = Config_GetSettingsForImageName_bool(L"UseElectronWorkaround", FALSE);
 
     //
     // abort if we should not hook any process creation functions
@@ -448,7 +447,8 @@ _FX BOOLEAN Proc_Init(void)
     // \Sessions\*\AppContainerNamedObjects\* is not open
     //
 
-    if (!Dll_CompartmentMode)
+    //if (!Dll_CompartmentMode)
+    if(Config_GetSettingsForImageName_bool(L"FakeAppContainerToken", Dll_CompartmentMode ? FALSE : TRUE))
     if (Dll_OsBuild >= 9600) // Windows 8.1 and later
     {
         void* CreateAppContainerToken = NULL;
@@ -673,23 +673,66 @@ _FX BOOL Proc_CreateAppContainerToken(
     PSECURITY_CAPABILITIES SecurityCapabilities,
     PHANDLE OutToken)
 {
-#if 1
-    OBJECT_ATTRIBUTES objattrs;
-    SECURITY_QUALITY_OF_SERVICE QoS;
+    BOOL ret = FALSE;
 
-    InitializeObjectAttributes(&objattrs, NULL, 0, NULL, NULL);
-    QoS.Length = sizeof(SECURITY_QUALITY_OF_SERVICE);
-    QoS.ImpersonationLevel = SecurityIdentification;
-    QoS.ContextTrackingMode = SECURITY_STATIC_TRACKING;
-    QoS.EffectiveOnly = FALSE;
-    objattrs.SecurityQualityOfService = &QoS;
+    //
+    // Starting with MSEdge 112.x the use of a restricted token as a stand in for a appcontainer token 
+    // does no longer work, hence when we detect MSEdge we use a copy of our regular token instead.
+    //
 
-    NTSTATUS status = NtDuplicateToken(TokenHandle, MAXIMUM_ALLOWED, &objattrs, FALSE, TokenPrimary, OutToken);
-    return NT_SUCCESS(status);
-#else
-    BOOL ret = __sys_CreateAppContainerToken(TokenHandle, SecurityCapabilities, OutToken);
+    static int isEdge = -1;
+    if (isEdge == -1) {
+        isEdge = _wcsicmp(Dll_ImageName, L"msedge.exe") == 0;
+    }
+
+
+    if (Config_GetSettingsForImageName_bool(L"UnRestrictAppContainerToken", isEdge ? TRUE : FALSE)) {
+
+        OBJECT_ATTRIBUTES objattrs;
+        SECURITY_QUALITY_OF_SERVICE QoS;
+
+        InitializeObjectAttributes(&objattrs, NULL, 0, NULL, NULL);
+        QoS.Length = sizeof(SECURITY_QUALITY_OF_SERVICE);
+        QoS.ImpersonationLevel = SecurityIdentification;
+        QoS.ContextTrackingMode = SECURITY_STATIC_TRACKING;
+        QoS.EffectiveOnly = FALSE;
+        objattrs.SecurityQualityOfService = &QoS;
+
+        NTSTATUS status = NtDuplicateToken(TokenHandle, MAXIMUM_ALLOWED, &objattrs, FALSE, TokenPrimary, OutToken);
+        ret = NT_SUCCESS(status);
+    }
+    else {
+
+        //SID_IDENTIFIER_AUTHORITY NtAuthority = {SECURITY_NT_AUTHORITY};
+        //SID_AND_ATTRIBUTES Sids[3];
+        //typedef BOOL (WINAPI *P_AllocateAndInitializeSid)(_In_ PSID_IDENTIFIER_AUTHORITY pIdentifierAuthority,
+        //    _In_ BYTE nSubAuthorityCount, _In_ DWORD nSubAuthority0, _In_ DWORD nSubAuthority1, _In_ DWORD nSubAuthority2, _In_ DWORD nSubAuthority3, 
+        //    _In_ DWORD nSubAuthority4, _In_ DWORD nSubAuthority5, _In_ DWORD nSubAuthority6, _In_ DWORD nSubAuthority7, _Outptr_ PSID* pSid );
+        //
+        //HMODULE advapi_dll = LoadLibrary(L"advapi32.dll");
+        //P_AllocateAndInitializeSid __sys_AllocateAndInitializeSid = (P_AllocateAndInitializeSid)GetProcAddress(advapi_dll, "AllocateAndInitializeSid");
+        //__sys_AllocateAndInitializeSid(&NtAuthority, 2, SECURITY_BUILTIN_DOMAIN_RID, DOMAIN_ALIAS_RID_ADMINS, 0, 0, 0, 0, 0, 0, &dropSids[0].Sid)
+
+        HANDLE hTokenReal;
+        if (NT_SUCCESS(NtOpenProcessToken(NtCurrentProcess(), MAXIMUM_ALLOWED, &hTokenReal))) {
+
+            if (!__sys_CreateRestrictedToken) {
+                *OutToken = hTokenReal;
+                return TRUE;
+            }
+
+            ULONG returnLength = 0;
+            BYTE Buffer[0x400]; // we need less than 0x200 in pracis
+            if (NT_SUCCESS(NtQueryInformationToken(hTokenReal, TokenGroups, Buffer, sizeof(Buffer), &returnLength))) {
+                PTOKEN_GROUPS Groups = (PTOKEN_GROUPS)Buffer;
+
+                ret = __sys_CreateRestrictedToken(hTokenReal, DISABLE_MAX_PRIVILEGE, Groups->GroupCount, Groups->Groups, 0, NULL, 0, NULL, OutToken);
+            }
+            NtClose(hTokenReal);
+        }
+    }
+
     return ret;
-#endif
 }
 
 
@@ -828,65 +871,70 @@ _FX BOOL Proc_CreateProcessInternalW(
         return ok;
     }
 
-    //
-    // Electron based applications which work like Chrome seem to fail with HW acceleration, even when 
-    // they get the same treatment as Chrome and Chromium derivatives.
-    // Hack: by adding a parameter to the gpu renderer process, we can fix the issue.
-    //
-
-    // $Workaround$ - 3rd party fix
-    if ((Dll_ImageType == DLL_IMAGE_UNSPECIFIED/* || Dll_ImageType == DLL_IMAGE_ELECTRON*/) && Dll_ElectronWorkaround)
+    // OriginalToken BEGIN
+    if (!Dll_CompartmentMode && !SbieApi_QueryConfBool(NULL, L"OriginalToken", FALSE))
+    // OriginalToken END
     {
-        if(lpApplicationName && lpCommandLine)
+        // $Workaround$ - 3rd party fix
+        
+        //
+        // Electron based applications which work like Chrome seem to fail with HW acceleration, even when 
+        // they get the same treatment as Chrome and Chromium derivatives.
+        // Hack: by adding a parameter to the gpu renderer process, we can fix the issue.
+        //
+
+        // $Workaround$ - 3rd party fix
+        if ((Dll_ImageType == DLL_IMAGE_UNSPECIFIED/* || Dll_ImageType == DLL_IMAGE_ELECTRON*/) && Dll_ElectronWorkaround)
         {
-            WCHAR* backslash = wcsrchr(lpApplicationName, L'\\');
-            if ((backslash && _wcsicmp(backslash + 1, Dll_ImageName) == 0)
-                && wcsstr(lpCommandLine, L" --type=gpu-process")
-                && !wcsstr(lpCommandLine, L" --use-gl=swiftshader-webgl")) {
+            if (lpApplicationName && lpCommandLine)
+            {
+                WCHAR* backslash = wcsrchr(lpApplicationName, L'\\');
+                if ((backslash && _wcsicmp(backslash + 1, Dll_ImageName) == 0)
+                    && wcsstr(lpCommandLine, L" --type=gpu-process")
+                    && !wcsstr(lpCommandLine, L" --use-gl=swiftshader-webgl")) {
 
-                lpAlteredCommandLine = Dll_Alloc((wcslen(lpCommandLine) + 32 + 1) * sizeof(WCHAR));
+                    lpAlteredCommandLine = Dll_Alloc((wcslen(lpCommandLine) + 32 + 1) * sizeof(WCHAR));
 
-                wcscpy(lpAlteredCommandLine, lpCommandLine);
-                wcscat(lpAlteredCommandLine, L" --use-gl=swiftshader-webgl");
+                    wcscpy(lpAlteredCommandLine, lpCommandLine);
+                    wcscat(lpAlteredCommandLine, L" --use-gl=swiftshader-webgl");
 
-                lpCommandLine = lpAlteredCommandLine;
+                    lpCommandLine = lpAlteredCommandLine;
+                }
             }
         }
+
+        //
+        // hack:  recent versions of Flash Player use the Chrome sandbox
+        // architecture which conflicts with our restricted process model
+        //
+
+        if (Dll_ImageType == DLL_IMAGE_FLASH_PLAYER_SANDBOX ||
+            Dll_ImageType == DLL_IMAGE_ACROBAT_READER ||
+            Dll_ImageType == DLL_IMAGE_PLUGIN_CONTAINER)
+            hToken = NULL;
+
+        if (Config_GetSettingsForImageName_bool(L"DeprecatedTokenHacks", FALSE)) // with drop container token, etc this should be obsolete
+        {
+            //
+            // MSEdge Compatibility hack
+            // workers of type cdm can't open SbieSvc's ALPC port
+            //
+
+            if (Dll_ImageType == DLL_IMAGE_GOOGLE_CHROME && lpCommandLine
+                && wcsstr(lpCommandLine, L"--service-sandbox-type"))
+                hToken = NULL;
+        }
+
+        //
+        // Compatibility hack for Firefox 106.x, processes with the "-sandboxingKind" flag
+        // fail to load DLLs and their token has the users group disabled
+        //
+
+        if (Dll_ImageType == DLL_IMAGE_MOZILLA_FIREFOX && lpCommandLine
+            // && wcsstr(lpCommandLine, L"-contentproc")
+            && wcsstr(lpCommandLine, L"-sandboxingKind"))
+            hToken = NULL;
     }
-
-    //
-    // hack:  recent versions of Flash Player use the Chrome sandbox
-    // architecture which conflicts with our restricted process model
-    //
-
-    // $Workaround$ - 3rd party fix
-    if (Dll_ImageType == DLL_IMAGE_FLASH_PLAYER_SANDBOX ||
-        Dll_ImageType == DLL_IMAGE_ACROBAT_READER ||
-        Dll_ImageType == DLL_IMAGE_PLUGIN_CONTAINER)
-        hToken = NULL;
-
-    //
-    // Compatibility hack for Firefox 106.x
-    //
-
-    // $Workaround$ - 3rd party fix
-    if (Dll_ImageType == DLL_IMAGE_MOZILLA_FIREFOX && lpCommandLine 
-     // && wcsstr(lpCommandLine, L"-contentproc")
-        && wcsstr(lpCommandLine, L"-sandboxingKind")
-      )
-        hToken = NULL;
-
-    //
-    // MSEdge Compatibility hack
-    // workers of type cdm can't open SbieSvc's ALPC port
-    //
-
-    // $Workaround$ - 3rd party fix
-    if(Dll_ImageType == DLL_IMAGE_GOOGLE_CHROME && lpCommandLine
-        && wcsstr(lpCommandLine, L"--service-sandbox-type")
-      )
-        hToken = NULL;
-
 
     //
     // use a copy path for the current directory
@@ -968,34 +1016,34 @@ _FX BOOL Proc_CreateProcessInternalW(
         // the system may have quoted the first part of the command line,
         // store this final command line
         //
-
-        if (TlsData->proc_command_line)
-            Dll_Free(TlsData->proc_command_line);
-
-        ULONG len = 0;
-        WCHAR* buf = NULL;
-
-        if (lpApplicationName) {
-            len = wcslen(lpApplicationName) + 2;        // +1 for space, +1 for NULL
-        }
-
-        if (lpCommandLine) {
-            len += wcslen(lpCommandLine) + 1;           // +1 for NULL
-        }
-
-        buf = Dll_Alloc(len * sizeof(WCHAR));
-        memset(buf, 0, len * sizeof(WCHAR));
-
-        if (lpApplicationName) {
-            wcscpy(buf, lpApplicationName);
-            wcscat(buf, L" ");
-        }
-
-        if (lpCommandLine) {
-            wcscat(buf, lpCommandLine);
-        }
-
-        TlsData->proc_command_line = buf;
+        //
+        //if (TlsData->proc_command_line)
+        //    Dll_Free(TlsData->proc_command_line);
+        //
+        //ULONG len = 0;
+        //WCHAR* buf = NULL;
+        //
+        //if (lpApplicationName) {
+        //    len = wcslen(lpApplicationName) + 2;        // +1 for space, +1 for NULL
+        //}
+        //
+        //if (lpCommandLine) {
+        //    len += wcslen(lpCommandLine) + 1;           // +1 for NULL
+        //}
+        //
+        //buf = Dll_Alloc(len * sizeof(WCHAR));
+        //memset(buf, 0, len * sizeof(WCHAR));
+        //
+        //if (lpApplicationName) {
+        //    wcscpy(buf, lpApplicationName);
+        //    wcscat(buf, L" ");
+        //}
+        //
+        //if (lpCommandLine) {
+        //    wcscat(buf, lpCommandLine);
+        //}
+        //
+        //TlsData->proc_command_line = buf;
 
     }
     else { // xp, 7, 8 and 10 before RS5
@@ -1258,6 +1306,16 @@ _FX BOOL Proc_CreateProcessInternalW(
     }
 #endif
 
+    //
+    // don't let the caller specify a app container token
+    //
+
+    if (Config_GetSettingsForImageName_bool(L"DropAppContainerToken", Dll_CompartmentMode ? FALSE : TRUE)) {
+        if (Secure_IsAppContainerToken(hToken)) {
+            hToken = NULL;
+            SbieApi_MonitorPutMsg(MONITOR_OTHER | MONITOR_TRACE, L"Dropped AppContainer Token");
+        }
+    }
 
     //
     // in compartment mode we don't mess around just create the process
@@ -1345,22 +1403,6 @@ _FX BOOL Proc_CreateProcessInternalW(
                 SaveOwnerThread = sd->Owner;
                 if (SaveOwnerThread)
                     sd->Owner = NULL;
-            }
-        }
-    }
-
-    //
-    // don't let the caller specify a app container token
-    //
-
-    if (Config_GetSettingsForImageName_bool(L"DropAppContainerTokens", TRUE)) {
-        ULONG returnLength = 0;
-        BYTE appContainerBuffer[0x80];
-        if (NT_SUCCESS(NtQueryInformationToken(hToken, (TOKEN_INFORMATION_CLASS)TokenAppContainerSid, appContainerBuffer, sizeof(appContainerBuffer), &returnLength))) {
-            PTOKEN_APPCONTAINER_INFORMATION appContainerInfo = (PTOKEN_APPCONTAINER_INFORMATION)appContainerBuffer;
-            if (appContainerInfo->TokenAppContainer != NULL) {
-                hToken = NULL;
-                SbieApi_MonitorPutMsg(MONITOR_OTHER | MONITOR_TRACE, L"Dropped AppContainer Token");
             }
         }
     }
@@ -1532,6 +1574,12 @@ finish:
 
         if (Config_GetSettingsForImageName_bool(L"ApplyElevateCreateProcessFix", FALSE))
         {
+            if (Dll_OsBuild >= 17677) { // 10 RS5 and later
+
+                if (TlsData->proc_image_is_copy && TlsData->proc_command_line)
+                    lpCommandLine = TlsData->proc_command_line;
+            }
+
             BOOL cancelled = FALSE;
             if (SH32_DoRunAs(lpCommandLine ? lpCommandLine : lpApplicationName, lpCurrentDirectory,
                 lpProcessInformation, &cancelled)) {
@@ -2172,7 +2220,7 @@ _FX NTSTATUS Proc_NtCreateUserProcess(
     _In_opt_ POBJECT_ATTRIBUTES ThreadObjectAttributes,
     _In_ ULONG ProcessFlags, // PROCESS_CREATE_FLAGS_*
     _In_ ULONG ThreadFlags, // THREAD_CREATE_FLAGS_*
-    _In_opt_ PVOID ProcessParameters, // PRTL_USER_PROCESS_PARAMETERS
+    _In_opt_ PRTL_USER_PROCESS_PARAMETERS ProcessParameters,
     _Inout_ PPS_CREATE_INFO CreateInfo,
     _In_ PPS_ATTRIBUTE_LIST AttributeList)
 {
@@ -2217,6 +2265,11 @@ _FX NTSTATUS Proc_NtCreateUserProcess(
             if (NT_SUCCESS(status)) {
 
                 Proc_StoreImagePath(TlsData, FileHandle);
+
+                if (TlsData->proc_image_path && ProcessParameters && ProcessParameters->CommandLine.Buffer) {
+
+                    Proc_FixBatchCommandLine(TlsData, ProcessParameters->CommandLine.Buffer, TlsData->proc_image_path);
+                }
 
                 NtClose(FileHandle);
             }

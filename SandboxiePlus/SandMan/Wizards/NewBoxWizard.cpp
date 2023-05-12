@@ -108,16 +108,28 @@ SB_STATUS CNewBoxWizard::TryToCreateBox()
         if(field("autoRecover").toBool())
             pBox->SetBool("AutoRecover", true);
 
-        if (field("blockNetwork").toInt() == 1) // old style
-            pBox->InsertText("AllowNetworkAccess", "!<InternetAccess>,n");
-        else if (field("blockNetwork").toInt() == 2) // WFP
+        if (field("blockNetwork").toInt() == 1) { // device based
+            //pBox->InsertText("AllowNetworkAccess", "<BlockNetAccess>,n");
             pBox->InsertText("ClosedFilePath", "!<InternetAccess>,InternetAccessDevices");
+            //pBox->InsertText("ClosedFilePath", "<BlockNetDevices>,InternetAccessDevices");
+        }
+        else if (field("blockNetwork").toInt() == 2) { // using WFP
+            pBox->InsertText("AllowNetworkAccess", "!<InternetAccess>,n");
+            //pBox->InsertText("AllowNetworkAccess", "<BlockNetAccess>,n");
+            //pBox->InsertText("ClosedFilePath", "<BlockNetDevices>,InternetAccessDevices");
+        }
         pBox->SetBool("BlockNetworkFiles", !field("shareAccess").toBool());
 
         if(field("fakeAdmin").toBool())
             pBox->SetBool("FakeAdminRights", true);
         if(field("msiServer").toBool())
             pBox->SetBool("MsiInstallerExemptions", true);
+
+        if(field("boxToken").toBool())
+            pBox->SetBool("SandboxieLogon", true);
+
+        if(field("imagesProtection").toBool())
+            pBox->SetBool("ProtectHostImages", true);
 
         if (field("boxVersion").toInt() == 1) {
             if (theConf->GetBool("Options/WarnDeleteV2", true)) {
@@ -141,7 +153,7 @@ QString CNewBoxWizard::GetDefaultLocation()
 {
     QString DefaultPath = theAPI->GetGlobalSettings()->GetText("FileRootPath", "\\??\\%SystemDrive%\\Sandbox\\%USER%\\%SANDBOX%", false, false);
     // HACK HACK: globally %SANDBOX% evaluates to GlobalSettings
-    DefaultPath.replace("\\GlobalSettings", "\\" + field("boxName").toString()); 
+    DefaultPath.replace("\\GlobalSettings", "\\" + field("boxName").toString().replace(" ", "_"));
     return theAPI->Nt2DosPath(DefaultPath);
 }
 
@@ -175,7 +187,7 @@ CBoxTypePage::CBoxTypePage(bool bAlowTemp, QWidget *parent)
     m_pBoxName->setMaxLength(32);
 	QMap<QString, CSandBoxPtr> Boxes = theAPI->GetAllBoxes();
 	for (int i=0;; i++) {
-		QString NewName = tr("New Box");
+		QString NewName = "New Box";
 		if (i > 0) NewName.append(" " + QString::number(i));
 		if (Boxes.contains(NewName.toLower().replace(" ", "_")))
 			continue;
@@ -219,6 +231,7 @@ CBoxTypePage::CBoxTypePage(bool bAlowTemp, QWidget *parent)
     registerField("autoRemove", pTemp);
 
     m_pAdvanced = new QCheckBox(tr("Configure advanced options"));
+    m_pAdvanced->setChecked(theConf->GetBool("Options/AdvancedBoxWizard", false));
     layout->addWidget(m_pAdvanced, row++, 2);
     connect(m_pAdvanced, SIGNAL(toggled(bool)), this, SLOT(OnAdvanced()));
 
@@ -394,7 +407,7 @@ bool CFilesPage::validatePage()
                 return false;
         }
         if (!QDir().exists(Location.left(3))) {
-            QMessageBox::critical(this, "Sandboxie-Plus", tr("The selected box location not placed on a currently available drive."));
+            QMessageBox::critical(this, "Sandboxie-Plus", tr("The selected box location is not placed on a currently available drive."));
             return false;
         }
         wizard()->setField("boxLocation", Location);
@@ -454,6 +467,23 @@ CAdvancedPage::CAdvancedPage(QWidget *parent)
     layout->addWidget(m_pMSIServer, row++, 1, 1, 3);
     registerField("msiServer", m_pMSIServer);
 
+    QLabel* pBoxLabel = new QLabel(tr("Box Options"), this);
+    pBoxLabel->setFont(fnt);
+    layout->addWidget(pBoxLabel, row++, 0);
+
+    QCheckBox* pBoxToken = new QCheckBox(tr("Use a Sandboxie login instead of an anonymous token"));
+    pBoxToken->setToolTip(tr("Using a custom Sandboxie Token allows to isolate individual sandboxes from each other better, and it shows in the user column of task managers the name of the box a process belongs to. Some 3rd party security solutions may however have problems with custom tokens."));
+    pBoxToken->setChecked(theConf->GetBool("BoxDefaults/BoxToken", false));
+    layout->addWidget(pBoxToken, row++, 1, 1, 3);
+    registerField("boxToken", pBoxToken);
+
+    QCheckBox* pImageProtection = new QCheckBox(tr("Prevent sandboxes programs installed on host from loading dll's from the sandbox"));
+    pImageProtection->setToolTip(tr("This feature may reduce compatibility as it also prevents box located processes from writing to host located ones and even starting them."));
+    pImageProtection->setChecked(theConf->GetBool("BoxDefaults/ImagesProtection", false));
+    pImageProtection->setEnabled(g_CertInfo.valid);
+    layout->addWidget(pImageProtection, row++, 1, 1, 3);
+    registerField("imagesProtection", pImageProtection);
+
     setLayout(layout);
 
 
@@ -463,6 +493,7 @@ CAdvancedPage::CAdvancedPage(QWidget *parent)
 #endif
     AddIconToLabel(pNetLabel, CSandMan::GetIcon("Network").pixmap(size,size));
     AddIconToLabel(pAdminLabel, CSandMan::GetIcon("Shield9").pixmap(size,size));
+    AddIconToLabel(pBoxLabel, CSandMan::GetIcon("Sandbox").pixmap(size,size));
 }
 
 int CAdvancedPage::nextId() const
@@ -550,6 +581,9 @@ void CSummaryPage::initializePage()
         m_pSummary->append(tr("\nThis box will run the MSIServer (*.msi installer service) with a system token, this improves the compatibility but reduces the security isolation."));
     else if(field("fakeAdmin").toBool())
         m_pSummary->append(tr("\nProcesses in this box will think they are run with administrative privileges, without actually having them, hence installers can be used even in a security hardened box."));
+    if(field("boxToken").toBool())
+        m_pSummary->append(tr("\nProcesses in this box will be running with a custom process token indicating the sandbox they belong to."));
+
 
     m_pSetDefault->setVisible(((CNewBoxWizard*)wizard())->m_bAdvanced);
 }
@@ -571,9 +605,13 @@ bool CSummaryPage::validatePage()
 
         theConf->SetValue("BoxDefaults/FakeAdmin", field("fakeAdmin").toBool());
         theConf->SetValue("BoxDefaults/MsiExemptions", field("msiServer").toBool());
+
+        theConf->SetValue("BoxDefaults/BoxToken", field("boxToken").toBool());
+        theConf->SetValue("BoxDefaults/ImagesProtection", field("imagesProtection").toBool());
     }
 
     theConf->SetValue("Options/InstantBoxWizard", m_pSetInstant->isChecked());
+    theConf->SetValue("Options/AdvancedBoxWizard", ((CNewBoxWizard*)wizard())->m_bAdvanced);
 
     SB_STATUS Status = ((CNewBoxWizard*)wizard())->TryToCreateBox();
     if (Status.IsError()) {

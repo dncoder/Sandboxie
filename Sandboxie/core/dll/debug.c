@@ -21,16 +21,49 @@
 //---------------------------------------------------------------------------
 
 
-#include "debug.h"
-#ifdef WITH_DEBUG
-
-
-//---------------------------------------------------------------------------
-
-
 #include "dll.h"
 #include <stdio.h>
 #include "../../common/my_xeb.h"
+#include "debug.h"
+
+
+//---------------------------------------------------------------------------
+// Debug_Wait
+//---------------------------------------------------------------------------
+
+
+_FX void Debug_Wait()
+{
+    BOOL Found = SbieApi_QueryConfBool(NULL, L"WaitForDebuggerAll", FALSE) ||
+        SbieDll_CheckStringInList(Dll_ImageName, NULL, L"WaitForDebugger");
+
+    const WCHAR *CmdLine = GetCommandLine();
+    WCHAR buf[66];
+    ULONG index = 0;
+    while (!Found) {
+        NTSTATUS status = SbieApi_QueryConfAsIs(NULL, L"WaitForDebuggerCmdLine", index, buf, 64 * sizeof(WCHAR));
+        ++index;
+        if (NT_SUCCESS(status)) {
+            if (wcsstr(CmdLine, buf) != 0) {
+                Found = TRUE;
+            }
+        }
+        else if (status != STATUS_BUFFER_TOO_SMALL)
+            break;
+    }
+
+    if (Found) {
+        while (!IsDebuggerPresent()) {
+            OutputDebugString(L"Waiting for Debugger\n");
+            Sleep(500);
+        }
+        if (!SbieApi_QueryConfBool(NULL, L"WaitForDebuggerSilent", TRUE))
+            __debugbreak();
+    }
+}
+
+
+#ifdef WITH_DEBUG
 
 
 //---------------------------------------------------------------------------
@@ -152,7 +185,7 @@ _FX int Debug_Init(void)
     NtRaiseHardError = (P_NtRaiseHardError)
         GetProcAddress(Dll_Ntdll, "NtRaiseHardError");
 
-    SBIEDLL_HOOK(Debug_,NtRaiseHardError);
+    //SBIEDLL_HOOK(Debug_,NtRaiseHardError);
 
 
     RtlSetLastWin32Error = (P_RtlSetLastWin32Error)

@@ -1,6 +1,6 @@
 /*
  * Copyright 2004-2020 Sandboxie Holdings, LLC 
- * Copyright 2020-2022 David Xanatos, xanasoft.com
+ * Copyright 2020-2023 David Xanatos, xanasoft.com
  *
  * This program is free software: you can redistribute it and/or modify
  *   it under the terms of the GNU General Public License as published by
@@ -98,7 +98,9 @@ BOOLEAN Dll_IsXtAjit = FALSE;
 #endif
 BOOLEAN Dll_IsSystemSid = FALSE;
 BOOLEAN Dll_InitComplete = FALSE;
+BOOLEAN Dll_EntryComplete = FALSE;
 BOOLEAN Dll_RestrictedToken = FALSE;
+BOOLEAN Dll_AppContainerToken = FALSE;
 BOOLEAN Dll_ChromeSandbox = FALSE;
 BOOLEAN Dll_FirstProcessInBox = FALSE;
 BOOLEAN Dll_CompartmentMode = FALSE;
@@ -259,8 +261,8 @@ _FX void Dll_InitInjected(void)
     // confirm the process is sandboxed before going further
     //
 
-    Dll_BoxNameSpace        = Dll_Alloc( 64 * sizeof(WCHAR));
-    memzero(Dll_BoxNameSpace,            64 * sizeof(WCHAR));
+    Dll_BoxNameSpace        = Dll_Alloc(BOXNAME_COUNT * sizeof(WCHAR));
+    memzero(Dll_BoxNameSpace,           BOXNAME_COUNT * sizeof(WCHAR));
 
     Dll_ImageNameSpace      = Dll_Alloc(256 * sizeof(WCHAR));
     memzero(Dll_ImageNameSpace,         256 * sizeof(WCHAR));
@@ -291,16 +293,7 @@ _FX void Dll_InitInjected(void)
     // break for the debugger, as soon as we have Dll_ImageName
     //
 
-    if (SbieDll_CheckStringInList(Dll_ImageName, NULL, L"WaitForDebugger")) {
-    //if (SbieDll_GetSettingsForName_bool(NULL, Dll_ImageName, L"WaitForDebugger", FALSE)) {
-    //if (SbieApi_QueryConfBool(NULL, L"WaitForDebuggerAll", FALSE)) {
-        while (!IsDebuggerPresent()) {
-            OutputDebugString(L"Waiting for Debugger\n");
-            Sleep(500);
-        } 
-        if(!SbieApi_QueryConfBool(NULL, L"WaitForDebuggerSilent", TRUE))
-            __debugbreak();
-    }
+    Debug_Wait();
 
     Trace_Init();
 
@@ -323,6 +316,14 @@ _FX void Dll_InitInjected(void)
     Dll_ProcessFlags = SbieApi_QueryProcessInfo(0, 0);
 
     Dll_CompartmentMode = (Dll_ProcessFlags & SBIE_FLAG_APP_COMPARTMENT) != 0;
+
+    //
+    // check for restricted token types
+    //
+
+    Dll_RestrictedToken = Secure_IsRestrictedToken(FALSE);
+
+    Dll_AppContainerToken = Secure_IsAppContainerToken(NULL);
 
     Dll_SelectImageType();
 
@@ -596,6 +597,11 @@ _FX void Dll_InitExeEntry(void)
     //
     // once we return here the process images entrypoint will be called
     //
+
+#ifdef WITH_DEBUG
+    DbgTrace("Dll_InitExeEntry completed");
+#endif
+    Dll_EntryComplete = TRUE;
 }
 
 
@@ -746,11 +752,10 @@ _FX void Dll_SelectImageType(void)
     // programs running as embedded previewers within Outlook
     //
 
-    Dll_RestrictedToken = Secure_IsRestrictedToken(FALSE);
-
-    if (Dll_RestrictedToken) {
+    if (Dll_RestrictedToken || Dll_AppContainerToken) {
 
         if (Dll_ImageType == DLL_IMAGE_GOOGLE_CHROME ||
+            Dll_ImageType == DLL_IMAGE_MOZILLA_FIREFOX ||
             Dll_ImageType == DLL_IMAGE_ACROBAT_READER ||
             Dll_ImageType == DLL_IMAGE_FLASH_PLAYER_SANDBOX) {
 
@@ -856,7 +861,7 @@ _FX ULONG_PTR Dll_Ordinal1(
         //
         HANDLE heventProcessStart = 0;
 
-        Dll_InitInjected(); // install required hooks
+        Dll_InitInjected(); // install required hooks (Dll_InitInjected -> Ldr_Init -> Ldr_Inject_Init(FALSE))
 
         //
         // notify RPCSS that a new process was created in the current sandbox
@@ -921,7 +926,7 @@ _FX ULONG_PTR Dll_Ordinal1(
     }
     else
     {
-        Ldr_Inject_Init(bHostInject);
+        Ldr_Inject_Init(TRUE);
     }
 	
     //
